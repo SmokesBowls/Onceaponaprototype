@@ -1,0 +1,249 @@
+export type NarrativeDistance =
+  | 'FRAGMENT'
+  | 'BEAT'
+  | 'EXCHANGE'
+  | 'SEQUENCE'
+  | 'SCENE'
+  | 'CHAPTER';
+
+export type OperatingMode =
+  | 'CONTINUATION'
+  | 'GENERATION'
+  | 'TRANSFORMATION'
+  | 'ANALYSIS';
+
+export interface EntityIdentity {
+  name: string | null;
+  working_label: string;
+  aliases: string[];
+}
+
+export interface ActorEntity {
+  id: string; // e.g. "actor_001"
+  identity: EntityIdentity;
+  roles: {
+    story: string[]; // e.g. ["antagonist", "detective"]
+    scene: string[]; // e.g. ["interrogator", "observer"]
+  };
+  traits: Record<string, number | string>; // e.g. { protective: 0.8, trusting: 0.3 }
+  current_state: {
+    fatigue: number;
+    fear: number;
+    certainty: number;
+    emotion: string;
+  };
+  active_goals: string[];
+  current_location_id: string;
+  possessions: string[]; // object IDs
+  isPresent: boolean;
+}
+
+export interface ObjectEntity {
+  id: string; // e.g. "object_001"
+  identity: EntityIdentity;
+  current_holder_id: string | null; // actor_id or null
+  current_location_id: string | null;
+  status: 'intact' | 'damaged' | 'destroyed' | 'missing';
+  salience: number; // 0.0 to 1.0 based on mentions & connections
+  isPresent: boolean;
+}
+
+export interface LocationEntity {
+  id: string; // e.g. "location_001"
+  identity: EntityIdentity;
+  parent_location_id: string | null;
+  connected_locations: string[];
+  description_summary: string;
+}
+
+export interface FactionEntity {
+  id: string; // e.g. "faction_001"
+  identity: EntityIdentity;
+  members: string[]; // actor IDs
+  influence: string;
+}
+
+export interface FactEntity {
+  id: string; // e.g. "fact_001"
+  statement: string;
+  status: 'established' | 'inferred' | 'suspected';
+  confidence: number; // 0.0 to 1.0
+  source_mention_id?: string;
+  provenance: {
+    chapter?: string;
+    scene?: string;
+    beat?: number;
+    evidence_quote?: string;
+  };
+}
+
+export interface ThreadEntity {
+  id: string; // e.g. "thread_001"
+  label: string;
+  status: 'open' | 'complicated' | 'resolved';
+  importance: 'minor' | 'major' | 'critical';
+  introduced_in: string;
+  resolution_allowed: boolean;
+}
+
+export interface RevealEntity {
+  id: string; // e.g. "reveal_001"
+  fact_id: string;
+  label: string;
+  status: 'locked' | 'foreshadowed' | 'unlocked';
+  allowed_before_unlock: string[]; // e.g. ["foreshadow", "ambiguous_sensory"]
+  forbidden_before_unlock: string[]; // e.g. ["direct_explanation", "narrator_confirmation"]
+}
+
+export interface MentionRecord {
+  id: string; // e.g. "mention_001"
+  entity_id: string;
+  passage_text: string;
+  scene_id: string;
+  beat_index: number;
+  timestamp_label: string;
+  confidence: number;
+  evidence_notes: string[];
+  extracted_relationships: Array<{
+    type: 'located_at' | 'possessed_by' | 'known_by' | 'used_during';
+    target_id: string;
+  }>;
+}
+
+export interface KnowledgeBoundaries {
+  world_truth: string[]; // Array of fact IDs true in world
+  reader_knowledge: string[]; // Facts the reader has observed
+  actor_knowledge: Record<
+    string,
+    {
+      known_facts: string[]; // facts this actor knows
+      beliefs: string[]; // beliefs (may differ from world truth)
+      forbidden_knowledge: string[]; // facts actor MUST NOT know
+    }
+  >;
+}
+
+export interface TemporalSnapshot {
+  time_index: string; // "T1", "T2", "T3"
+  label: string;
+  beat_ref: string;
+  entity_locations: Record<string, string>; // entity_id -> location_id
+  object_possessions: Record<string, string | null>; // object_id -> actor_id | null
+  actor_states: Record<string, { fatigue: number; emotion: string }>;
+  unlocked_reveals: string[];
+}
+
+export interface RewriteContract {
+  presetName: string;
+  modify: string[];
+  preserve: string[];
+  forbid: string[];
+}
+
+export interface BeatPlanStage1 {
+  beat_type: string;
+  primary_actor_id: string;
+  intended_action: string;
+  knowledge_verified: boolean;
+  reveals_protected: boolean;
+  threads_advanced: string[];
+  threads_resolved: string[];
+  distance_budget: NarrativeDistance;
+}
+
+export interface ValidationDiagnostic {
+  severity: 'FATAL' | 'WARNING' | 'INFO';
+  rule: string;
+  message: string;
+  remedy?: string;
+}
+
+export interface ValidationReport {
+  passed: boolean;
+  score: number;
+  diagnostics: ValidationDiagnostic[];
+  notes?: string;
+}
+
+export interface CandidateGeneration {
+  id: string;
+  timestamp: number;
+  operation: OperatingMode;
+  narrativeDistance: NarrativeDistance;
+  prompt: string;
+  stage1Plan?: BeatPlanStage1;
+  stage2Prose: string;
+  validation: ValidationReport;
+  contextPackage: any;
+  status: 'pending' | 'accepted' | 'rejected';
+}
+
+export interface HistoryReceipt {
+  operation_id: string;
+  timestamp: number;
+  summary: string;
+  changes: string[];
+  snapshot: StoryProject;
+}
+
+export interface StoryPosition {
+  act: string;
+  chapter: string;
+  scene: string;
+  beat: number;
+  location_id: string;
+  location_label: string;
+}
+
+export interface StoryProject {
+  id: string;
+  title: string;
+  description: string;
+  currentPosition: StoryPosition;
+  activePovActorId: string;
+  manuscript: Array<{
+    id: string;
+    beatNumber: number;
+    text: string;
+    povActorId: string;
+    locationId: string;
+    acceptedAt: number;
+  }>;
+  actors: ActorEntity[];
+  objects: ObjectEntity[];
+  locations: LocationEntity[];
+  factions: FactionEntity[];
+  facts: FactEntity[];
+  threads: ThreadEntity[];
+  reveals: RevealEntity[];
+  mentions: MentionRecord[];
+  knowledge: KnowledgeBoundaries;
+  temporalHistory: TemporalSnapshot[];
+}
+
+export interface BenchmarkTestCase {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  setupSummary: string;
+  prompt: string;
+  requestedDistance: NarrativeDistance;
+  constraints: {
+    forbiddenRevealId?: string;
+    forbiddenKnowledgeFactId?: string;
+    protectedInvariants?: string[];
+    displacedObjectId?: string;
+    isolatedActorId?: string;
+  };
+  nakedModelBehavior: {
+    flawName: string;
+    explanation: string;
+    sampleViolationOutput: string;
+  };
+  frameworkBehavior: {
+    remedyName: string;
+    explanation: string;
+    sampleCompliantOutput: string;
+  };
+}
