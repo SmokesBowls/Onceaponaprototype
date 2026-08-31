@@ -117,31 +117,11 @@ function validateAndNormalizePlan(
     ctx.relevantOpenThreads.filter((t) => t.resolution_allowed).map((t) => t.id)
   );
 
-  const threadsAdvancedValid = rawAdvancedThreads.every((tId: string) => typeof tId === 'string' && authorizedThreadIds.has(tId));
-  const threadsResolvedValid = rawResolvedThreads.every((tId: string) => typeof tId === 'string' && resolvableThreadIds.has(tId));
-
-  // 4. Epistemic Knowledge Check
-  // In Stage 1 planning, check intended action does not mention unperceived canonical names or forbidden terms
   const intendedAction = typeof plan?.intended_action === 'string' ? plan.intended_action : 'Advance immediate narrative beat';
-  const lowerAction = intendedAction.toLowerCase();
-  
-  // Verify plan does not reference forbidden knowledge or unperceived entity info
-  let actionKnowledgeValid = true;
-  for (const entity of ctx.presentEntities) {
-    if (entity.name && entity.name !== entity.label && !entity.label.toLowerCase().includes(entity.name.toLowerCase())) {
-      // If name is distinct from perceived label and not in label, ensure it was not leaked into intended_action unless authorized
-      // In GenerationContext, entity.name is only set if perceived/known to POV
-    }
-  }
 
-  const knowledgeVerified = isPrimaryActorValid && entitiesValid && threadsAdvancedValid && actionKnowledgeValid;
-
-  // 5. Reveal Protection Check
-  // Reveal protection cannot be proven merely by empty resolved threads;
-  // Stage 1 context does not expose locked reveals (epistemic exclusion).
-  // Therefore Stage 1 must NOT claim reveals are verified/protected unless proven.
-  // Stage 1 reports reveals_protected: false by default since full reveal validation
-  // is performed at Candidate Validation stage where locked reveals are accessible.
+  // Stage 1 structural checks filter unauthorized IDs, but Stage 1 must NOT claim full epistemic knowledge verification
+  // or reveal verification (which is performed at Candidate Validation).
+  const knowledgeVerified = false;
   const revealsProtected = false;
 
   return {
@@ -166,19 +146,13 @@ function generateLocalPlan(ctx: GenerationContext, prompt: string): BeatPlanStag
   const localEntities = [povId, ...(ctx.relevantPossessions.map((p) => p.id))];
   const localThreadsAdvanced = ctx.relevantOpenThreads.slice(0, 1).map((t) => t.id);
 
-  const isPrimaryActorValid = povId === ctx.activePovActor.id;
-  const entitiesValid = localEntities.every(
-    (id) => id === povId || ctx.relevantPossessions.some((p) => p.id === id) || ctx.presentEntities.some((e) => e.id === id)
-  );
-  const threadsAdvancedValid = localThreadsAdvanced.every((id) => ctx.relevantOpenThreads.some((t) => t.id === id));
-
   return {
     beat_type: ctx.narrativeDistance === 'FRAGMENT' ? 'observation' : 'action',
     primary_actor_id: povId,
     intended_action: prompt || `Observes and interacts cautiously within ${ctx.currentLocation?.working_label || 'the current chamber'}`,
     permitted_entities_involved: localEntities,
     permitted_state_transitions: ['attention focused on immediate focal point'],
-    knowledge_verified: isPrimaryActorValid && entitiesValid && threadsAdvancedValid,
+    knowledge_verified: false,
     reveals_protected: false, // Stage 1 local planner does not manufacture reveal verification
     threads_advanced: localThreadsAdvanced,
     threads_resolved: [],

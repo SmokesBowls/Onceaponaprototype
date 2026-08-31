@@ -144,23 +144,23 @@ async function runValidationTests() {
   // -------------------------------------------------------------
   console.log('--- TEST 1: Stage 1 Plan Verification Truthfulness ---');
 
-  // A. Local Stage 1 must NOT manufacture reveal verification (reveals_protected must be false)
+  // A. Local Stage 1 must NOT claim full epistemic knowledge verification or manufacture reveal verification
   const localPlan = await planNarrativeBeat(genCtx, 'Evelyn investigates the bookshelf.', offlineProvider);
 
   assert(
-    localPlan.knowledge_verified === true,
-    'Local Stage 1 plan sets knowledge_verified: true for valid entity and thread authorizations'
+    localPlan.knowledge_verified === false,
+    'Local Stage 1 plan sets knowledge_verified: false (does not claim unperformed epistemic verification)'
   );
   assert(
     localPlan.reveals_protected === false,
-    'Local Stage 1 plan does NOT manufacture reveals_protected: true (must be false)'
+    'Local Stage 1 plan sets reveals_protected: false (does not manufacture reveals_protected: true)'
   );
   assert(
     Array.isArray(localPlan.threads_resolved) && localPlan.threads_resolved.length === 0,
     'threads_resolved is empty, yet reveals_protected is truthfully false rather than claimed true'
   );
 
-  // B. Online / Normalized Stage 1 Plan must not claim reveals_protected merely because threads_resolved is empty
+  // B. Online / Normalized Stage 1 Plan must not claim knowledge_verified or reveals_protected
   const mockPlanWithEmptyResolved = {
     name: 'mock_online_planner',
     isAvailable: () => true,
@@ -183,12 +183,12 @@ async function runValidationTests() {
   const normalizedPlan = await planNarrativeBeat(genCtx, 'Examines parchment', mockPlanWithEmptyResolved);
 
   assert(
-    normalizedPlan.knowledge_verified === true,
-    'Normalized plan sets knowledge_verified: true when entities and threads are authorized'
+    normalizedPlan.knowledge_verified === false,
+    'Normalized Stage 1 plan sets knowledge_verified: false'
   );
   assert(
     normalizedPlan.reveals_protected === false,
-    'Stage 1 does NOT claim reveal protection merely because threads_resolved is empty'
+    'Normalized Stage 1 plan sets reveals_protected: false'
   );
 
   // -------------------------------------------------------------
