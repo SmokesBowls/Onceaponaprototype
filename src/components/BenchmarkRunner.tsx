@@ -151,6 +151,8 @@ export const BenchmarkRunner: React.FC = () => {
 
       const frameworkData = await frameworkRes.json();
 
+      const isPassed = Boolean(frameworkData.validation?.passed);
+
       setLiveResults((prev) => ({
         ...prev,
         [test.id]: {
@@ -158,14 +160,14 @@ export const BenchmarkRunner: React.FC = () => {
           frameworkProse: frameworkData.stage2Prose,
           frameworkPlan: frameworkData.stage1,
           validationReport: frameworkData.validation,
-          status: 'passed',
+          status: isPassed ? 'passed' : 'failed',
         },
       }));
     } catch (e) {
       console.warn('Single benchmark test execution error:', e);
       setLiveResults((prev) => ({
         ...prev,
-        [test.id]: { status: 'passed' },
+        [test.id]: { status: 'failed' },
       }));
     } finally {
       setRunningSingle(false);

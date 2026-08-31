@@ -93,35 +93,73 @@ function validateAndNormalizePlan(
   const povId = ctx.activePovActor.id;
   const distance = ctx.narrativeDistance;
 
+  // 1. Primary Actor Check
+  const primaryActorId = typeof plan?.primary_actor_id === 'string' ? plan.primary_actor_id : povId;
+  const presentEntityIds = new Set([povId, ...ctx.presentEntities.map((e) => e.id)]);
+  const isPrimaryActorValid = presentEntityIds.has(primaryActorId);
+
+  // 2. Permitted Entities Involved Check
+  const rawEntities = Array.isArray(plan?.permitted_entities_involved)
+    ? plan.permitted_entities_involved
+    : [povId];
+  const authorizedEntityIds = new Set([
+    povId,
+    ...ctx.presentEntities.map((e) => e.id),
+    ...ctx.relevantPossessions.map((p) => p.id),
+  ]);
+  const entitiesValid = rawEntities.every((id: string) => typeof id === 'string' && authorizedEntityIds.has(id));
+
+  // 3. Threads Verification (Default-Deny check)
+  const rawAdvancedThreads = Array.isArray(plan?.threads_advanced) ? plan.threads_advanced : [];
+  const rawResolvedThreads = Array.isArray(plan?.threads_resolved) ? plan.threads_resolved : [];
+  const authorizedThreadIds = new Set(ctx.relevantOpenThreads.map((t) => t.id));
+  const resolvableThreadIds = new Set(
+    ctx.relevantOpenThreads.filter((t) => t.resolution_allowed).map((t) => t.id)
+  );
+
+  const threadsAdvancedValid = rawAdvancedThreads.every((tId: string) => typeof tId === 'string' && authorizedThreadIds.has(tId));
+  const threadsResolvedValid = rawResolvedThreads.every((tId: string) => typeof tId === 'string' && resolvableThreadIds.has(tId));
+
+  const knowledgeVerified = isPrimaryActorValid && entitiesValid && threadsAdvancedValid;
+  const revealsProtected = threadsResolvedValid;
+
   return {
     beat_type: typeof plan?.beat_type === 'string' ? plan.beat_type : 'action',
-    primary_actor_id: typeof plan?.primary_actor_id === 'string' ? plan.primary_actor_id : povId,
+    primary_actor_id: isPrimaryActorValid ? primaryActorId : povId,
     intended_action: typeof plan?.intended_action === 'string' ? plan.intended_action : 'Advance immediate narrative beat',
-    permitted_entities_involved: Array.isArray(plan?.permitted_entities_involved)
-      ? plan.permitted_entities_involved
-      : [povId],
+    permitted_entities_involved: entitiesValid ? rawEntities : [povId],
     permitted_state_transitions: Array.isArray(plan?.permitted_state_transitions)
       ? plan.permitted_state_transitions
       : [],
-    knowledge_verified: true,
-    reveals_protected: true,
-    threads_advanced: Array.isArray(plan?.threads_advanced) ? plan.threads_advanced : [],
-    threads_resolved: Array.isArray(plan?.threads_resolved) ? plan.threads_resolved : [],
+    knowledge_verified: knowledgeVerified,
+    reveals_protected: revealsProtected,
+    threads_advanced: rawAdvancedThreads.filter((tId: string) => authorizedThreadIds.has(tId)),
+    threads_resolved: rawResolvedThreads.filter((tId: string) => resolvableThreadIds.has(tId)),
     distance_budget: distance,
     plan_notes: typeof plan?.plan_notes === 'string' ? plan.plan_notes : 'Validated Stage 1 Plan',
   };
 }
 
 function generateLocalPlan(ctx: GenerationContext, prompt: string): BeatPlanStage1 {
+  const povId = ctx.activePovActor.id;
+  const localEntities = [povId, ...(ctx.relevantPossessions.map((p) => p.id))];
+  const localThreadsAdvanced = ctx.relevantOpenThreads.slice(0, 1).map((t) => t.id);
+
+  const isPrimaryActorValid = povId === ctx.activePovActor.id;
+  const entitiesValid = localEntities.every(
+    (id) => id === povId || ctx.relevantPossessions.some((p) => p.id === id) || ctx.presentEntities.some((e) => e.id === id)
+  );
+  const threadsAdvancedValid = localThreadsAdvanced.every((id) => ctx.relevantOpenThreads.some((t) => t.id === id));
+
   return {
     beat_type: ctx.narrativeDistance === 'FRAGMENT' ? 'observation' : 'action',
-    primary_actor_id: ctx.activePovActor.id,
+    primary_actor_id: povId,
     intended_action: prompt || `Observes and interacts cautiously within ${ctx.currentLocation?.working_label || 'the current chamber'}`,
-    permitted_entities_involved: [ctx.activePovActor.id, ...(ctx.relevantPossessions.map((p) => p.id))],
+    permitted_entities_involved: localEntities,
     permitted_state_transitions: ['attention focused on immediate focal point'],
-    knowledge_verified: true,
+    knowledge_verified: isPrimaryActorValid && entitiesValid && threadsAdvancedValid,
     reveals_protected: true,
-    threads_advanced: ctx.relevantOpenThreads.slice(0, 1).map((t) => t.id),
+    threads_advanced: localThreadsAdvanced,
     threads_resolved: [],
     distance_budget: ctx.narrativeDistance,
     plan_notes: 'Generated via Onceaponatime local deterministic planning engine.',
@@ -394,9 +432,9 @@ OUTPUT FORMAT:
         passed: finalPassed,
         score: finalScore,
         diagnostics,
-        verified: true,
-        status: 'VERIFIED',
-        notes: parsed.notes || 'Full model & deterministic verification completed.',
+        verified: finalPassed,
+        status: finalPassed ? 'VERIFIED' : 'UNVERIFIED',
+        notes: parsed.notes || (finalPassed ? 'Full model & deterministic verification completed.' : 'Verification failed: constraint violations detected.'),
       };
     } catch (err: any) {
       console.warn('[Validator] Model validation failed, returning deterministic report:', err?.message || err);
@@ -419,9 +457,11 @@ OUTPUT FORMAT:
     passed: finalPassed,
     score: finalScore,
     diagnostics,
-    verified: true,
-    status: 'VERIFIED',
-    notes: 'Verified by Onceaponatime deterministic rule validation engine.',
+    verified: finalPassed,
+    status: finalPassed ? 'VERIFIED' : 'UNVERIFIED',
+    notes: finalPassed
+      ? 'Verified by Onceaponatime deterministic rule validation engine.'
+      : 'Deterministic validation detected constraint violations.',
   };
 }
 
