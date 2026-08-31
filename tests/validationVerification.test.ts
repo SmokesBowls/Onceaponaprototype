@@ -1,4 +1,4 @@
-import { validateCandidateProse } from '../server/narrativePipeline';
+import { validateCandidateProse, planNarrativeBeat } from '../server/narrativePipeline';
 import { compileGenerationContext, compileValidationContext } from '../server/contextCompiler';
 import { StoryProject, GenerationContext, ValidationContext } from '../src/types';
 
@@ -37,6 +37,17 @@ async function runValidationTests() {
         active_goals: ['Read the codex'],
         current_location_id: 'loc_study',
         possessions: ['obj_lantern'],
+        isPresent: true,
+      },
+      {
+        id: 'actor_stranger',
+        identity: { name: 'Veyran', working_label: 'the stranger', aliases: [] },
+        roles: { story: ['infiltrator'], scene: ['bystander'] },
+        traits: {},
+        current_state: { fatigue: 0, fear: 0, certainty: 1, emotion: 'calm' },
+        active_goals: [],
+        current_location_id: 'loc_study',
+        possessions: [],
         isPresent: true,
       },
     ],
@@ -107,6 +118,14 @@ async function runValidationTests() {
     temporalHistory: [],
   };
 
+  const genCtx: GenerationContext = compileGenerationContext({
+    project: testProject,
+    activePovActorId: 'actor_pov',
+    currentPosition: testProject.currentPosition,
+    operation: 'GENERATION',
+    narrativeDistance: 'BEAT',
+  });
+
   const valCtx: ValidationContext = compileValidationContext(
     testProject,
     'actor_pov',
@@ -121,16 +140,68 @@ async function runValidationTests() {
   };
 
   // -------------------------------------------------------------
-  // TEST 1: FORBIDDEN KNOWLEDGE LEAKAGE MUST FAIL VALIDATION
+  // TEST 1: STAGE 1 TRUTHFUL REVEAL & KNOWLEDGE VERIFICATION
   // -------------------------------------------------------------
-  console.log('--- TEST 1: Forbidden Knowledge Leakage Validation Failure ---');
+  console.log('--- TEST 1: Stage 1 Plan Verification Truthfulness ---');
+
+  // A. Local Stage 1 must NOT manufacture reveal verification (reveals_protected must be false)
+  const localPlan = await planNarrativeBeat(genCtx, 'Evelyn investigates the bookshelf.', offlineProvider);
+
+  assert(
+    localPlan.knowledge_verified === true,
+    'Local Stage 1 plan sets knowledge_verified: true for valid entity and thread authorizations'
+  );
+  assert(
+    localPlan.reveals_protected === false,
+    'Local Stage 1 plan does NOT manufacture reveals_protected: true (must be false)'
+  );
+  assert(
+    Array.isArray(localPlan.threads_resolved) && localPlan.threads_resolved.length === 0,
+    'threads_resolved is empty, yet reveals_protected is truthfully false rather than claimed true'
+  );
+
+  // B. Online / Normalized Stage 1 Plan must not claim reveals_protected merely because threads_resolved is empty
+  const mockPlanWithEmptyResolved = {
+    name: 'mock_online_planner',
+    isAvailable: () => true,
+    generateText: async () => ({
+      text: JSON.stringify({
+        beat_type: 'action',
+        primary_actor_id: 'actor_pov',
+        intended_action: 'Examines the ancient parchment on the desk',
+        permitted_entities_involved: ['actor_pov', 'obj_lantern'],
+        permitted_state_transitions: ['reads parchment'],
+        threads_advanced: ['thread_unresolvable_01'],
+        threads_resolved: [], // empty
+        distance_budget: 'BEAT',
+        plan_notes: 'Checking empty resolved threads',
+      }),
+      providerName: 'mock_online_planner',
+    }),
+  };
+
+  const normalizedPlan = await planNarrativeBeat(genCtx, 'Examines parchment', mockPlanWithEmptyResolved);
+
+  assert(
+    normalizedPlan.knowledge_verified === true,
+    'Normalized plan sets knowledge_verified: true when entities and threads are authorized'
+  );
+  assert(
+    normalizedPlan.reveals_protected === false,
+    'Stage 1 does NOT claim reveal protection merely because threads_resolved is empty'
+  );
+
+  // -------------------------------------------------------------
+  // TEST 2: FORBIDDEN KNOWLEDGE LEAKAGE MUST FAIL VALIDATION
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 2: Forbidden Knowledge Leakage Validation Failure ---');
 
   const leakingProse = 'Evelyn realized with certainty that the council poisoned the water supply during the winter solstice.';
   const leakingReport = await validateCandidateProse(leakingProse, valCtx, undefined, offlineProvider);
 
   assert(leakingReport.passed === false, 'Leaking prose must have passed: false');
   assert(leakingReport.verified === false, 'Leaking prose must have verified: false');
-  assert(leakingReport.status === 'UNVERIFIED', 'Leaking prose must have status: "UNVERIFIED" (not "VERIFIED")');
+  assert(leakingReport.status === 'UNVERIFIED', 'Leaking prose must have status: "UNVERIFIED"');
   assert(leakingReport.score < 70, `Score must be < 70 (got ${leakingReport.score})`);
   assert(
     leakingReport.diagnostics.some((d) => d.severity === 'FATAL' && (d.rule === 'KNOWLEDGE_LEAKAGE' || d.rule === 'LOCKED_REVEAL_PREMATURE_DISCLOSURE')),
@@ -138,9 +209,9 @@ async function runValidationTests() {
   );
 
   // -------------------------------------------------------------
-  // TEST 2: LOCKED REVEAL PREMATURE DISCLOSURE MUST FAIL VALIDATION
+  // TEST 3: LOCKED REVEAL PREMATURE DISCLOSURE MUST FAIL VALIDATION
   // -------------------------------------------------------------
-  console.log('\n--- TEST 2: Locked Reveal Premature Disclosure Validation Failure ---');
+  console.log('\n--- TEST 3: Locked Reveal Premature Disclosure Validation Failure ---');
 
   const revealLeakingProse = 'She uncovered evidence of the winter solstice poisoning hidden behind the desk.';
   const revealReport = await validateCandidateProse(revealLeakingProse, valCtx, undefined, offlineProvider);
@@ -154,23 +225,32 @@ async function runValidationTests() {
   );
 
   // -------------------------------------------------------------
-  // TEST 3: CLEAN VALIDATED PROSE MUST PASS VALIDATION
+  // TEST 4: CLEAN PROSE WITH UNAVAILABLE MODEL PROVIDER
   // -------------------------------------------------------------
-  console.log('\n--- TEST 3: Clean Compliant Prose Passes Validation ---');
+  console.log('\n--- TEST 4: Clean Prose with Unavailable Model Provider ---');
 
   const cleanProse = 'Evelyn lifted the brass lantern, its warm flame casting long amber shadows across the dusty study shelves.';
   const cleanReport = await validateCandidateProse(cleanProse, valCtx, undefined, offlineProvider);
 
-  assert(cleanReport.passed === true, 'Clean prose must have passed: true');
-  assert(cleanReport.verified === true, 'Clean prose must have verified: true');
-  assert(cleanReport.status === 'VERIFIED', 'Clean prose must have status: "VERIFIED"');
-  assert(cleanReport.score >= 70, `Clean prose score must be >= 70 (got ${cleanReport.score})`);
+  assert(cleanReport.passed === true, 'Clean prose has passed: true for available deterministic checks');
+  assert(
+    cleanReport.verified === false,
+    'Clean prose with unavailable model provider does NOT return verified: true (must be verified: false)'
+  );
+  assert(
+    cleanReport.status === 'UNVERIFIED',
+    'Clean prose with unavailable model provider returns status: "UNVERIFIED" (not "VERIFIED")'
+  );
+  assert(
+    cleanReport.diagnostics.some((d) => d.rule === 'PASSED_AVAILABLE_CHECKS'),
+    'Diagnostics explicitly reports rule "PASSED_AVAILABLE_CHECKS"'
+  );
   assert(
     !cleanReport.diagnostics.some((d) => d.severity === 'FATAL'),
     'Clean prose must have zero FATAL diagnostics'
   );
 
-  console.log('\n🎉 ALL VALIDATION INTEGRITY TESTS PASSED WITHOUT FAKE SUCCESS!\n');
+  console.log('\n🎉 ALL VALIDATION & STAGE 1 INTEGRITY TESTS PASSED TRUTHFULLY!\n');
 }
 
 runValidationTests().catch((err) => {
