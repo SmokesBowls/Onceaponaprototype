@@ -90,13 +90,16 @@ function compilePovAuthorizedRecentProse(
     }
   }
 
-  // D. Canonical secret names of other actors unknown to this POV
+  // D. Canonical secret names and working labels of other actors unknown to this POV
   const knownEntitiesSet = new Set(actorKnowledge.known_entities || []);
   for (const a of project.actors) {
     if (a.id !== povActorId && !knownEntitiesSet.has(a.id)) {
       const perception = actorKnowledge.known_entity_perceptions?.[a.id];
       if (!perception?.perceived_name && a.identity.name) {
         forbiddenPhrases.push(a.identity.name.toLowerCase().trim());
+      }
+      if (!perception?.perceived_label && a.identity.working_label && a.identity.working_label !== 'unidentified person') {
+        forbiddenPhrases.push(a.identity.working_label.toLowerCase().trim());
       }
     }
   }
@@ -225,9 +228,7 @@ export function compileGenerationContext(
         perception?.perceived_label ||
         (isCanonicalKnown
           ? (a.identity.working_label || a.identity.name || a.id)
-          : (a.identity.working_label && a.identity.working_label !== a.identity.name
-              ? a.identity.working_label
-              : 'unidentified person'));
+          : 'unidentified person');
 
       const perceivedName =
         perception?.perceived_name !== undefined
@@ -271,7 +272,7 @@ export function compileGenerationContext(
         perception?.perceived_label ||
         (isCanonicalKnown
           ? (o.identity.working_label || o.identity.name || o.id)
-          : (o.identity.working_label || 'unidentified object'));
+          : 'unidentified object');
 
       const perceivedName =
         perception?.perceived_name !== undefined
@@ -291,9 +292,7 @@ export function compileGenerationContext(
             hPerception?.perceived_label ||
             (isHolderKnown
               ? (holder.identity.name || holder.identity.working_label)
-              : (holder.identity.working_label && holder.identity.working_label !== holder.identity.name
-                  ? holder.identity.working_label
-                  : 'present character'));
+              : 'unidentified person');
         }
       }
 
@@ -322,7 +321,7 @@ export function compileGenerationContext(
     const isObjectKnown = knownEntitiesSet.has(o.id);
     const objectLabel =
       oPerception?.perceived_label ||
-      (isObjectKnown ? (o.identity.working_label || o.identity.name) : (o.identity.working_label || 'object'));
+      (isObjectKnown ? (o.identity.working_label || o.identity.name) : 'unidentified object');
 
     let holderDisplayName: string | null = null;
     if (holder) {
@@ -335,9 +334,7 @@ export function compileGenerationContext(
           hPerception?.perceived_label ||
           (isHolderKnown
             ? (holder.identity.name || holder.identity.working_label)
-            : (holder.identity.working_label && holder.identity.working_label !== holder.identity.name
-                ? holder.identity.working_label
-                : 'present character'));
+            : 'unidentified person');
       }
     }
 
@@ -349,23 +346,23 @@ export function compileGenerationContext(
     };
   });
 
-  // 7. Relevant Open Threads (Epistemically filtered: only threads visible to this POV)
+  // 7. Relevant Open Threads (Epistemically filtered: DEFAULT-DENY)
+  // An open thread enters GenerationContext ONLY IF explicitly authorized via:
+  // - thread.visible_to_actor_ids containing povActor.id, OR
+  // - actorKnowledge.known_threads containing thread.id.
+  // No implicit or default visibility.
   const relevantOpenThreads = project.threads
     .filter((t) => {
       // Must be open
       if (t.status !== 'open') return false;
-      // Author-only threads are strictly excluded from generation context
+      // Author-only threads are strictly excluded
       if (t.author_only === true) return false;
-      // If visibility whitelist is specified, actor must be in it
-      if (Array.isArray(t.visible_to_actor_ids)) {
-        return t.visible_to_actor_ids.includes(povActor.id);
-      }
-      // If actor's known_threads is specified, thread must be in it
-      if (Array.isArray(actorKnowledge.known_threads)) {
-        return actorKnowledge.known_threads.includes(t.id);
-      }
-      // Otherwise permitted if not author_only
-      return true;
+
+      // Check explicit authorization
+      const isVisibleInThreadList = Array.isArray(t.visible_to_actor_ids) && t.visible_to_actor_ids.includes(povActor.id);
+      const isKnownInActorKnowledge = Array.isArray(actorKnowledge.known_threads) && actorKnowledge.known_threads.includes(t.id);
+
+      return isVisibleInThreadList || isKnownInActorKnowledge;
     })
     .map((t) => ({
       id: t.id,

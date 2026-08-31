@@ -295,14 +295,14 @@ function runTests() {
 
 
   // -------------------------------------------------------------
-  // TEST SUITE 3: THREAD VISIBILITY LEAKAGE TEST (Guarantees G, H, I, J)
+  // TEST SUITE 3: THREAD VISIBILITY LEAKAGE TEST (Guarantees G, H, I, J & DEFAULT-DENY)
   // -------------------------------------------------------------
-  console.log('\n--- TEST 3: Thread Visibility Filtering (G, H, I, J) ---');
+  console.log('\n--- TEST 3: Thread Visibility Filtering (G, H, I, J & DEFAULT-DENY) ---');
 
   const testProject3: StoryProject = {
     id: 'proj_epistemic_03',
     title: 'Thread Visibility Test Story',
-    description: 'Testing exclusion of author-only threads and inclusion of POV-authorized threads',
+    description: 'Testing exclusion of author-only threads, non-authorized threads, and inclusion of POV-authorized threads',
     currentPosition: {
       act: 'Act I',
       chapter: 'Chapter 1',
@@ -350,7 +350,10 @@ function runTests() {
       },
     },
     reveals: [],
-    // Guarantee G & I: Open author-only thread AND POV-visible open thread
+    // Guarantee G, I & DEFAULT-DENY:
+    // 1. Author-only thread
+    // 2. Open thread with author_only=false, but NO visible_to_actor_ids and POV has NO known_threads entry
+    // 3. POV-visible open thread
     threads: [
       {
         id: 'thread_author_conspiracy_01',
@@ -360,6 +363,15 @@ function runTests() {
         introduced_in: 'Act I Outline',
         resolution_allowed: false,
         author_only: true, // Guarantee G: Open author-only thread exists
+      },
+      {
+        id: 'thread_unauthorized_smuggling_02',
+        label: 'Unrelated midnight smuggling operation',
+        status: 'open',
+        importance: 'minor',
+        introduced_in: 'Chapter 1',
+        resolution_allowed: true,
+        author_only: false, // author_only=false, but clerk has no permission
       },
       {
         id: 'thread_visible_audit_01',
@@ -397,6 +409,16 @@ function runTests() {
     'Author-only thread label "Secret high-council treason plot" is ABSENT from serialized GenerationContext'
   );
 
+  // Default-Deny Verification: Open thread without explicit POV authorization is absent
+  assert(
+    !serializedClerkContext.includes('thread_unauthorized_smuggling_02'),
+    'Default-deny thread ID thread_unauthorized_smuggling_02 is ABSENT from serialized GenerationContext'
+  );
+  assert(
+    !serializedClerkContext.includes('Unrelated midnight smuggling operation'),
+    'Default-deny thread label "Unrelated midnight smuggling operation" is ABSENT from serialized GenerationContext'
+  );
+
   // Guarantee J: POV-visible thread is present in GenerationContext
   assert(
     serializedClerkContext.includes('thread_visible_audit_01'),
@@ -408,10 +430,123 @@ function runTests() {
   );
   assert(
     clerkContext.relevantOpenThreads.length === 1,
-    'relevantOpenThreads array length is exactly 1'
+    'relevantOpenThreads array length is exactly 1 (only the explicitly authorized thread)'
   );
 
-  console.log('\n🎉 ALL 10 EPISTEMIC GUARANTEES (A through J) VERIFIED AND PASSED!\n');
+
+  // -------------------------------------------------------------
+  // TEST SUITE 4: UNKNOWN ENTITY FALLBACK TEST (Strict "unidentified person")
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 4: Unknown Entity Fallback to "unidentified person" ---');
+
+  const testProject4: StoryProject = {
+    id: 'proj_epistemic_04',
+    title: 'Unknown Entity Test Story',
+    description: 'Testing fallback for unknown actor with canonical working_label',
+    currentPosition: {
+      act: 'Act I',
+      chapter: 'Chapter 1',
+      scene: 'Scene 1',
+      beat: 1,
+      location_id: 'loc_hall',
+      location_label: 'Great Hall',
+    },
+    activePovActorId: 'actor_guard',
+    actors: [
+      {
+        id: 'actor_guard',
+        identity: { name: 'Gate Guard', working_label: 'the guard', aliases: [] },
+        roles: { story: ['guard'], scene: ['sentry'] },
+        traits: { alert: 0.8 },
+        current_state: { fatigue: 0.1, fear: 0.0, certainty: 0.5, emotion: 'neutral' },
+        active_goals: ['Watch the door'],
+        current_location_id: 'loc_hall',
+        possessions: [],
+        isPresent: true,
+      },
+      {
+        id: 'actor_unknown_assassin',
+        identity: {
+          name: 'Veyran',
+          working_label: 'the royal assassin',
+          aliases: ['Shadow Blade'],
+        },
+        roles: { story: ['assassin'], scene: ['infiltrator'] },
+        traits: { stealth: 'legendary' },
+        current_state: { fatigue: 0.0, fear: 0.0, certainty: 1.0, emotion: 'cold' },
+        active_goals: ['Infiltrate'],
+        current_location_id: 'loc_hall',
+        possessions: [],
+        isPresent: true,
+      },
+    ],
+    objects: [],
+    locations: [
+      {
+        id: 'loc_hall',
+        identity: { name: 'Great Hall', working_label: 'the hall', aliases: [] },
+        parent_location_id: null,
+        connected_locations: [],
+        description_summary: 'A grand hall with stone pillars.',
+      },
+    ],
+    factions: [],
+    facts: [],
+    knowledge: {
+      world_truth: [],
+      reader_knowledge: [],
+      actor_knowledge: {
+        actor_guard: {
+          known_facts: [],
+          beliefs: [],
+          forbidden_knowledge: [],
+          // Note: NO known_entity_perceptions and NO known_entities record for actor_unknown_assassin
+        },
+      },
+    },
+    reveals: [],
+    threads: [],
+    manuscript: [],
+    mentions: [],
+    temporalHistory: [],
+  };
+
+  const guardContext = compileGenerationContext({
+    project: testProject4,
+    activePovActorId: 'actor_guard',
+    currentPosition: testProject4.currentPosition,
+    operation: 'GENERATION',
+    narrativeDistance: 'BEAT',
+  });
+
+  const serializedGuardContext = JSON.stringify(guardContext);
+
+  assert(
+    serializedGuardContext.includes('actor_unknown_assassin'),
+    'Serialized GenerationContext contains neutral ID actor_unknown_assassin'
+  );
+  assert(
+    serializedGuardContext.includes('unidentified person'),
+    'Serialized GenerationContext contains fallback label "unidentified person"'
+  );
+  assert(
+    !serializedGuardContext.includes('Veyran'),
+    'Serialized GenerationContext does NOT contain canonical name "Veyran"'
+  );
+  assert(
+    !serializedGuardContext.includes('the royal assassin'),
+    'Serialized GenerationContext does NOT contain working_label "the royal assassin"'
+  );
+  assert(
+    !serializedGuardContext.includes('royal assassin'),
+    'Serialized GenerationContext does NOT contain phrase "royal assassin"'
+  );
+  assert(
+    !serializedGuardContext.includes('Shadow Blade'),
+    'Serialized GenerationContext does NOT contain alias "Shadow Blade"'
+  );
+
+  console.log('\n🎉 ALL EPISTEMIC GUARANTEES & DEFAULT-DENY ISOLATION VERIFIED AND PASSED!\n');
 }
 
 runTests();
