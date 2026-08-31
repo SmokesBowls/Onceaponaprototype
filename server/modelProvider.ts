@@ -35,7 +35,7 @@ export class GeminiProvider implements ModelProvider {
           apiKey,
           httpOptions: {
             headers: {
-              'User-Agent': 'aistudio-build-onceaponatime',
+              'User-Agent': 'aistudio-build',
             },
           },
         });
@@ -54,17 +54,23 @@ export class GeminiProvider implements ModelProvider {
       throw new Error('GEMINI_API_KEY is not configured on the server.');
     }
 
-    const candidateModels = [
-      params.model || 'gemini-3.7-flash',
+    // Build unique list of model candidates with primary model first
+    const primaryModel = params.model || 'gemini-3.7-flash';
+    const fallbackList = [
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
       'gemini-3.1-flash-lite',
       'gemini-flash-latest',
     ];
+    const candidateModels = Array.from(new Set([primaryModel, ...fallbackList]));
 
     let lastError: any = null;
 
     for (let mIdx = 0; mIdx < candidateModels.length; mIdx++) {
       const currentModel = candidateModels[mIdx];
-      for (let attempt = 0; attempt < 2; attempt++) {
+      const maxAttempts = 2;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
           const config: any = {};
           if (params.systemPrompt) {
@@ -103,15 +109,41 @@ export class GeminiProvider implements ModelProvider {
           }
         } catch (err: any) {
           lastError = err;
-          console.warn(`[GeminiProvider] Attempt failed model=${currentModel} attempt=${attempt + 1}: ${err?.message || err}`);
-          if (attempt === 0) {
-            await new Promise((r) => setTimeout(r, 600));
+          const errMsg = err?.message || String(err);
+          const isOverloadedOrUnavailable =
+            err?.status === 'UNAVAILABLE' ||
+            err?.code === 503 ||
+            errMsg.includes('503') ||
+            errMsg.includes('high demand') ||
+            errMsg.includes('UNAVAILABLE') ||
+            errMsg.includes('Resource has been exhausted') ||
+            errMsg.includes('429');
+
+          const isNotFoundOrDeprecated =
+            err?.status === 'NOT_FOUND' ||
+            err?.code === 404 ||
+            errMsg.includes('404') ||
+            errMsg.includes('no longer available') ||
+            errMsg.includes('not found');
+
+          console.warn(`[GeminiProvider] Attempt ${attempt + 1}/${maxAttempts} failed on ${currentModel}: ${errMsg}`);
+
+          // If the model is 404/deprecated or unavailable/overloaded, immediately pivot to the next candidate model
+          if ((isNotFoundOrDeprecated || isOverloadedOrUnavailable) && mIdx < candidateModels.length - 1) {
+            console.info(`[GeminiProvider] ${currentModel} failed (${isNotFoundOrDeprecated ? 'deprecated/not found' : 'busy/unavailable'}). Switching to fallback candidate ${candidateModels[mIdx + 1]}...`);
+            break; // Break inner retry loop and proceed to next candidate model
+          }
+
+          // Otherwise, apply a brief exponential backoff with jitter before retrying
+          if (attempt < maxAttempts - 1 && !isNotFoundOrDeprecated) {
+            const backoffMs = 400 * Math.pow(2, attempt) + Math.random() * 200;
+            await new Promise((r) => setTimeout(r, backoffMs));
           }
         }
       }
     }
 
-    throw lastError || new Error('All model provider attempts exhausted.');
+    throw lastError || new Error('All Gemini model provider attempts exhausted.');
   }
 }
 
