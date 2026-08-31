@@ -6,6 +6,7 @@ import {
   RewriteContract,
   GenerationContext,
   ValidationContext,
+  KnowledgeBoundaries,
 } from '../src/types';
 
 /**
@@ -30,6 +31,99 @@ export interface CompileGenerationContextParams {
   narrativeDistance: NarrativeDistance;
   rewriteContract?: RewriteContract | null;
   recentBeatCount?: number;
+}
+
+/**
+ * POV-Authorized Continuity Prose Extractor
+ *
+ * Epistemic rules:
+ * - A manuscript beat is only included if it was experienced from the active POV's
+ *   perspective (beat.povActorId === povActor.id).
+ * - Even for candidate beats, if a beat contains information/strings forbidden
+ *   to this POV (forbidden facts, locked reveals, unknown world truths, or secret
+ *   canonical names unknown to this POV), the beat is excluded.
+ */
+function compilePovAuthorizedRecentProse(
+  project: StoryProject,
+  povActorId: string,
+  actorKnowledge: KnowledgeBoundaries['actor_knowledge'][string],
+  recentBeatCount: number
+): string {
+  const forbiddenPhrases: string[] = [];
+
+  // A. Statements of forbidden facts for this actor
+  const forbiddenFactIds = new Set(actorKnowledge.forbidden_knowledge || []);
+  for (const f of project.facts) {
+    if (forbiddenFactIds.has(f.id) && f.statement) {
+      forbiddenPhrases.push(f.statement.toLowerCase().trim());
+    }
+  }
+
+  // B. World truths not known by this actor
+  const knownFactIds = new Set(actorKnowledge.known_facts || []);
+  const worldTruthIds = new Set(project.knowledge.world_truth || []);
+  for (const f of project.facts) {
+    if (worldTruthIds.has(f.id) && !knownFactIds.has(f.id) && f.statement) {
+      forbiddenPhrases.push(f.statement.toLowerCase().trim());
+    }
+  }
+
+  // C. Locked reveals forbidden strings / secret fact statements
+  for (const r of project.reveals) {
+    if (r.status === 'locked') {
+      const fact = project.facts.find((f) => f.id === r.fact_id);
+      if (fact && !knownFactIds.has(fact.id) && fact.statement) {
+        forbiddenPhrases.push(fact.statement.toLowerCase().trim());
+      }
+      if (Array.isArray(r.forbidden_before_unlock)) {
+        for (const term of r.forbidden_before_unlock) {
+          if (
+            term &&
+            term.trim().length > 0 &&
+            term !== 'direct_explanation' &&
+            term !== 'narrator_confirmation'
+          ) {
+            forbiddenPhrases.push(term.toLowerCase().trim());
+          }
+        }
+      }
+    }
+  }
+
+  // D. Canonical secret names of other actors unknown to this POV
+  const knownEntitiesSet = new Set(actorKnowledge.known_entities || []);
+  for (const a of project.actors) {
+    if (a.id !== povActorId && !knownEntitiesSet.has(a.id)) {
+      const perception = actorKnowledge.known_entity_perceptions?.[a.id];
+      if (!perception?.perceived_name && a.identity.name) {
+        forbiddenPhrases.push(a.identity.name.toLowerCase().trim());
+      }
+    }
+  }
+
+  const candidateBeats = project.manuscript.slice(-Math.max(1, recentBeatCount * 2));
+  const authorizedBeats: string[] = [];
+
+  for (const beat of candidateBeats) {
+    // 1. Perspective check: Beat must be from this POV actor
+    if (beat.povActorId !== povActorId) {
+      continue;
+    }
+
+    // 2. Secret leak check: Beat text must not contain any forbidden phrase
+    const lowerText = beat.text.toLowerCase();
+    const hasForbiddenPhrase = forbiddenPhrases.some((phrase) => {
+      return phrase.length > 2 && lowerText.includes(phrase);
+    });
+
+    if (hasForbiddenPhrase) {
+      continue;
+    }
+
+    authorizedBeats.push(beat.text);
+  }
+
+  return authorizedBeats.slice(-recentBeatCount).join('\n\n');
 }
 
 export function compileGenerationContext(
@@ -74,14 +168,12 @@ export function compileGenerationContext(
   // 4. Sincere Beliefs (beliefs the actor holds, which may differ from world truth)
   const sincereBeliefs = [...(actorKnowledge.beliefs || [])];
 
-  // 5. Filter Currently Perceptible / Local Entities
-  // Actors present at the current location
+  // 5. Filter Currently Perceptible / Local Entities with Strict Epistemic Boundaries
   const presentActors = project.actors.filter(
     (a) => a.isPresent && a.current_location_id === currentPosition.location_id
   );
   const presentActorIdSet = new Set(presentActors.map((a) => a.id));
 
-  // Objects present at the current location OR held by present actors
   const presentObjects = project.objects.filter((o) => {
     if (!o.isPresent) return false;
     if (o.current_location_id === currentPosition.location_id) return true;
@@ -104,54 +196,177 @@ export function compileGenerationContext(
       }
     : null;
 
-  // Normalized present entities list for the generator
+  const knownEntitiesSet = new Set(actorKnowledge.known_entities || []);
+
+  // Normalized present entities list for the generator (epistemically filtered)
   const presentEntities: GenerationContext['presentEntities'] = [
-    ...presentActors.map((a) => ({
-      id: a.id,
-      type: 'actor' as const,
-      label: a.identity.working_label || a.identity.name || a.id,
-      name: a.identity.name,
-      aliases: a.identity.aliases || [],
-      roleOrStatus: a.roles?.scene?.[0] || a.roles?.story?.[0] || 'character',
-      locationId: a.current_location_id,
-      currentHolderId: null,
-      traitsOrDescription: a.traits,
-      currentState: a.current_state,
-    })),
+    ...presentActors.map((a) => {
+      // POV Actor knows their own canonical identity, roles, traits, and state
+      if (a.id === povActor.id) {
+        return {
+          id: a.id,
+          type: 'actor' as const,
+          label: a.identity.working_label || a.identity.name || a.id,
+          name: a.identity.name,
+          aliases: a.identity.aliases || [],
+          roleOrStatus: a.roles?.scene?.[0] || a.roles?.story?.[0] || 'character',
+          locationId: a.current_location_id,
+          currentHolderId: null,
+          traitsOrDescription: a.traits,
+          currentState: a.current_state,
+        };
+      }
+
+      // Other present actors: filter strictly according to POV actor's knowledge
+      const perception = actorKnowledge.known_entity_perceptions?.[a.id];
+      const isCanonicalKnown = knownEntitiesSet.has(a.id) || (perception?.perceived_name !== undefined && perception?.perceived_name !== null);
+
+      const perceivedLabel =
+        perception?.perceived_label ||
+        (isCanonicalKnown
+          ? (a.identity.working_label || a.identity.name || a.id)
+          : (a.identity.working_label && a.identity.working_label !== a.identity.name
+              ? a.identity.working_label
+              : 'unidentified person'));
+
+      const perceivedName =
+        perception?.perceived_name !== undefined
+          ? perception.perceived_name
+          : (isCanonicalKnown ? a.identity.name : null);
+
+      const perceivedAliases = isCanonicalKnown ? (a.identity.aliases || []) : [];
+
+      const perceivedRole =
+        perception?.perceived_role ||
+        (isCanonicalKnown
+          ? (a.roles?.scene?.[0] || a.roles?.story?.[0] || 'character')
+          : 'present character');
+
+      const perceivedTraits =
+        perception?.perceived_traits ||
+        (isCanonicalKnown ? a.traits : {});
+
+      return {
+        id: a.id,
+        type: 'actor' as const,
+        label: perceivedLabel,
+        name: perceivedName,
+        aliases: perceivedAliases,
+        roleOrStatus: perceivedRole,
+        locationId: a.current_location_id,
+        currentHolderId: null,
+        traitsOrDescription: perceivedTraits,
+        currentState: {
+          fatigue: a.current_state?.fatigue,
+          emotion: isCanonicalKnown ? a.current_state?.emotion : 'observant',
+        },
+      };
+    }),
     ...presentObjects.map((o) => {
       const holder = project.actors.find((a) => a.id === o.current_holder_id);
+      const isCanonicalKnown = knownEntitiesSet.has(o.id);
+      const perception = actorKnowledge.known_entity_perceptions?.[o.id];
+
+      const perceivedLabel =
+        perception?.perceived_label ||
+        (isCanonicalKnown
+          ? (o.identity.working_label || o.identity.name || o.id)
+          : (o.identity.working_label || 'unidentified object'));
+
+      const perceivedName =
+        perception?.perceived_name !== undefined
+          ? perception.perceived_name
+          : (isCanonicalKnown ? o.identity.name : null);
+
+      const perceivedAliases = isCanonicalKnown ? (o.identity.aliases || []) : [];
+
+      let holderLabel = 'unheld';
+      if (holder) {
+        if (holder.id === povActor.id) {
+          holderLabel = holder.identity.name || holder.identity.working_label;
+        } else {
+          const hPerception = actorKnowledge.known_entity_perceptions?.[holder.id];
+          const isHolderKnown = knownEntitiesSet.has(holder.id) || (hPerception?.perceived_name !== undefined && hPerception?.perceived_name !== null);
+          holderLabel =
+            hPerception?.perceived_label ||
+            (isHolderKnown
+              ? (holder.identity.name || holder.identity.working_label)
+              : (holder.identity.working_label && holder.identity.working_label !== holder.identity.name
+                  ? holder.identity.working_label
+                  : 'present character'));
+        }
+      }
+
       return {
         id: o.id,
         type: 'object' as const,
-        label: o.identity.working_label || o.identity.name || o.id,
-        name: o.identity.name,
-        aliases: o.identity.aliases || [],
+        label: perceivedLabel,
+        name: perceivedName,
+        aliases: perceivedAliases,
         roleOrStatus: o.status,
         locationId: o.current_location_id,
         currentHolderId: o.current_holder_id,
         traitsOrDescription: {
           salience: o.salience,
-          holder: holder ? holder.identity.working_label || holder.identity.name : 'unheld',
+          holder: holderLabel,
         },
         currentState: { status: o.status },
       };
     }),
   ];
 
-  // 6. Relevant Possessions (belonging to POV or visible present actors)
+  // 6. Relevant Possessions (Epistemically filtered)
   const relevantPossessions = presentObjects.map((o) => {
     const holder = project.actors.find((a) => a.id === o.current_holder_id);
+    const oPerception = actorKnowledge.known_entity_perceptions?.[o.id];
+    const isObjectKnown = knownEntitiesSet.has(o.id);
+    const objectLabel =
+      oPerception?.perceived_label ||
+      (isObjectKnown ? (o.identity.working_label || o.identity.name) : (o.identity.working_label || 'object'));
+
+    let holderDisplayName: string | null = null;
+    if (holder) {
+      if (holder.id === povActor.id) {
+        holderDisplayName = holder.identity.name || holder.identity.working_label;
+      } else {
+        const hPerception = actorKnowledge.known_entity_perceptions?.[holder.id];
+        const isHolderKnown = knownEntitiesSet.has(holder.id) || (hPerception?.perceived_name !== undefined && hPerception?.perceived_name !== null);
+        holderDisplayName =
+          hPerception?.perceived_label ||
+          (isHolderKnown
+            ? (holder.identity.name || holder.identity.working_label)
+            : (holder.identity.working_label && holder.identity.working_label !== holder.identity.name
+                ? holder.identity.working_label
+                : 'present character'));
+      }
+    }
+
     return {
       id: o.id,
-      label: o.identity.working_label || o.identity.name || o.id,
+      label: objectLabel,
       holderId: o.current_holder_id,
-      holderName: holder ? holder.identity.name || holder.identity.working_label : null,
+      holderName: holderDisplayName,
     };
   });
 
-  // 7. Relevant Open Threads (open threads the POV may legitimately interact with)
+  // 7. Relevant Open Threads (Epistemically filtered: only threads visible to this POV)
   const relevantOpenThreads = project.threads
-    .filter((t) => t.status === 'open')
+    .filter((t) => {
+      // Must be open
+      if (t.status !== 'open') return false;
+      // Author-only threads are strictly excluded from generation context
+      if (t.author_only === true) return false;
+      // If visibility whitelist is specified, actor must be in it
+      if (Array.isArray(t.visible_to_actor_ids)) {
+        return t.visible_to_actor_ids.includes(povActor.id);
+      }
+      // If actor's known_threads is specified, thread must be in it
+      if (Array.isArray(actorKnowledge.known_threads)) {
+        return actorKnowledge.known_threads.includes(t.id);
+      }
+      // Otherwise permitted if not author_only
+      return true;
+    })
     .map((t) => ({
       id: t.id,
       label: t.label,
@@ -182,11 +397,13 @@ export function compileGenerationContext(
     }
   }
 
-  // 9. Recent Prose for continuity
-  const recentProse = project.manuscript
-    .slice(-recentBeatCount)
-    .map((b) => b.text)
-    .join('\n\n');
+  // 9. POV-Authorized Continuity Prose
+  const recentProse = compilePovAuthorizedRecentProse(
+    project,
+    povActor.id,
+    actorKnowledge,
+    recentBeatCount
+  );
 
   return {
     operatingMode: operation,

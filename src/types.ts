@@ -84,6 +84,8 @@ export interface ThreadEntity {
   importance: 'minor' | 'major' | 'critical';
   introduced_in: string;
   resolution_allowed: boolean;
+  author_only?: boolean; // If true, author-only thread hidden from generation context
+  visible_to_actor_ids?: string[]; // Actor IDs permitted to be aware of this thread
 }
 
 export interface RevealEntity {
@@ -119,6 +121,17 @@ export interface KnowledgeBoundaries {
       known_facts: string[]; // facts this actor knows
       beliefs: string[]; // beliefs (may differ from world truth)
       forbidden_knowledge: string[]; // facts actor MUST NOT know
+      known_entity_perceptions?: Record<
+        string,
+        {
+          perceived_label: string; // e.g. "the hooded stranger"
+          perceived_name?: string | null; // null if real name is unknown to POV
+          perceived_role?: string | null; // e.g. "unidentified patron"
+          perceived_traits?: Record<string, any>;
+        }
+      >;
+      known_entities?: string[]; // IDs of entities whose canonical names are known
+      known_threads?: string[]; // IDs of threads this actor is aware of
     }
   >;
 }
