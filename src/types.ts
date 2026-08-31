@@ -125,8 +125,20 @@ export interface KnowledgeBoundaries {
 
 export interface TemporalSnapshot {
   time_index: string; // "T1", "T2", "T3"
+  operation_id?: string;
+  timestamp?: number;
   label: string;
   beat_ref: string;
+  previous_story_position?: StoryPosition;
+  resulting_story_position?: StoryPosition;
+  accepted_beat_id?: string;
+  pov_actor_id?: string;
+  location_id?: string;
+  affected_entity_ids?: string[];
+  applied_state_changes?: string[];
+  thread_changes?: string[];
+  reveal_changes?: string[];
+  mention_ids?: string[];
   entity_locations: Record<string, string>; // entity_id -> location_id
   object_possessions: Record<string, string | null>; // object_id -> actor_id | null
   actor_states: Record<string, { fatigue: number; emotion: string }>;
@@ -140,15 +152,95 @@ export interface RewriteContract {
   forbid: string[];
 }
 
+export interface GenerationContext {
+  operatingMode: OperatingMode;
+  narrativeDistance: NarrativeDistance;
+  storyPosition: StoryPosition;
+  activePovActor: {
+    id: string;
+    identity: EntityIdentity;
+    roles: { story: string[]; scene: string[] };
+    traits: Record<string, number | string>;
+    current_state: { fatigue: number; fear: number; certainty: number; emotion: string };
+    active_goals: string[];
+    current_location_id: string;
+    possessions: string[];
+  };
+  knownFacts: Array<{
+    id: string;
+    statement: string;
+    status: string;
+    provenance?: any;
+  }>;
+  sincereBeliefs: string[];
+  presentEntities: Array<{
+    id: string;
+    type: 'actor' | 'object' | 'location';
+    label: string;
+    name: string | null;
+    aliases: string[];
+    roleOrStatus?: string;
+    locationId?: string | null;
+    currentHolderId?: string | null;
+    traitsOrDescription?: any;
+    currentState?: any;
+  }>;
+  currentLocation: {
+    id: string;
+    name: string | null;
+    working_label: string;
+    description_summary: string;
+    connected_locations: string[];
+  } | null;
+  relevantPossessions: Array<{
+    id: string;
+    label: string;
+    holderId: string | null;
+    holderName: string | null;
+  }>;
+  relevantOpenThreads: Array<{
+    id: string;
+    label: string;
+    importance: string;
+    resolution_allowed: boolean;
+  }>;
+  permittedForeshadowingCues: string[];
+  recentProse: string;
+  rewriteContract: RewriteContract | null;
+}
+
+export interface ValidationContext {
+  povActorId: string;
+  povActorLabel: string;
+  forbiddenFacts: Array<{ id: string; statement: string }>;
+  lockedReveals: Array<{
+    id: string;
+    factStatement?: string;
+    allowedBeforeUnlock: string[];
+    forbiddenBeforeUnlock: string[];
+    status: string;
+  }>;
+  worldTruthFacts: Array<{ id: string; statement: string }>;
+  presentEntityIds: string[];
+  displacedEntityIds: string[];
+  objectHolders: Record<string, string | null>;
+  openThreads: Array<{ id: string; label: string; resolution_allowed: boolean }>;
+  narrativeDistance: NarrativeDistance;
+  rewriteContract: RewriteContract | null;
+}
+
 export interface BeatPlanStage1 {
   beat_type: string;
   primary_actor_id: string;
   intended_action: string;
+  permitted_entities_involved?: string[];
+  permitted_state_transitions?: string[];
   knowledge_verified: boolean;
   reveals_protected: boolean;
   threads_advanced: string[];
   threads_resolved: string[];
   distance_budget: NarrativeDistance;
+  plan_notes?: string;
 }
 
 export interface ValidationDiagnostic {
@@ -162,6 +254,8 @@ export interface ValidationReport {
   passed: boolean;
   score: number;
   diagnostics: ValidationDiagnostic[];
+  verified: boolean;
+  status: 'VERIFIED' | 'UNVERIFIED';
   notes?: string;
 }
 

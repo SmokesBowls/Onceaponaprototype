@@ -66,6 +66,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   const [promptText, setPromptText] = useState('');
   const [selectedRewritePreset, setSelectedRewritePreset] = useState<RewriteContract>(REWRITE_PRESETS[0]);
   const [showContractDetails, setShowContractDetails] = useState(false);
+  const [showContextPackage, setShowContextPackage] = useState(false);
   const [editingBeatId, setEditingBeatId] = useState<string | null>(null);
   const [editingBeatContent, setEditingBeatContent] = useState('');
   const [nakedComparisonText, setNakedComparisonText] = useState<string | null>(null);
@@ -265,10 +266,21 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
 
             {/* Stage 1 Plan Summary */}
             {candidate.stage1Plan && (
-              <div className="bg-white/10 rounded p-4 text-xs font-sans space-y-1.5 text-white/90 border border-white/10">
-                <div className="font-bold text-[11px] uppercase tracking-wider text-[#E5E2D9] flex items-center gap-1.5">
-                  <Layers className="h-3.5 w-3.5" />
-                  <span>Stage 1 Narrative Plan:</span>
+              <div className="bg-white/10 rounded p-4 text-xs font-sans space-y-2 text-white/90 border border-white/10">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-[11px] uppercase tracking-wider text-[#E5E2D9] flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5" />
+                    <span>Stage 1 Narrative Plan:</span>
+                  </div>
+                  {candidate.contextPackage && (
+                    <button
+                      type="button"
+                      onClick={() => setShowContextPackage((prev) => !prev)}
+                      className="text-[10px] text-[#E5E2D9] hover:underline font-mono uppercase tracking-wider"
+                    >
+                      {showContextPackage ? 'Hide Context Package' : 'Inspect Authorized Context Package'}
+                    </button>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
                   <div>
@@ -281,6 +293,35 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                     <span className="text-white/50 uppercase text-[10px]">Intended Action:</span> {candidate.stage1Plan.intended_action}
                   </div>
                 </div>
+
+                {showContextPackage && candidate.contextPackage && (
+                  <div className="mt-3 pt-3 border-t border-white/20 space-y-2">
+                    <div className="text-[10px] uppercase tracking-widest text-[#E5E2D9] font-bold">
+                      Knowledge Boundaries (Enforced by Context Exclusion):
+                    </div>
+                    <div className="bg-[#FAF8F2] text-[#1A1A1A] p-3 rounded text-[11px] font-mono max-h-48 overflow-y-auto space-y-1.5">
+                      <div>
+                        <strong>Authorized Known Facts ({candidate.contextPackage.knownFacts?.length || 0}):</strong>
+                        <ul className="list-disc list-inside text-[10px] mt-0.5">
+                          {candidate.contextPackage.knownFacts?.map((f: any) => (
+                            <li key={f.id}>{f.statement}</li>
+                          )) || <li>None</li>}
+                        </ul>
+                      </div>
+                      <div>
+                        <strong>Permitted Foreshadowing Cues ({candidate.contextPackage.permittedForeshadowingCues?.length || 0}):</strong>
+                        <ul className="list-disc list-inside text-[10px] mt-0.5">
+                          {candidate.contextPackage.permittedForeshadowingCues?.map((c: string, idx: number) => (
+                            <li key={idx}>{c}</li>
+                          )) || <li>None</li>}
+                        </ul>
+                      </div>
+                      <div className="text-[9px] text-[#5A554E] italic font-serif pt-1">
+                        * Note: Hidden world truth and locked reveals were strictly excluded prior to model invocation.
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
