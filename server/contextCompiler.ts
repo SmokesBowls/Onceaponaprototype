@@ -8,6 +8,7 @@ import {
   ValidationContext,
   KnowledgeBoundaries,
 } from '../src/types';
+import { synthesizeCodex } from './codexEngine';
 
 /**
  * Dedicated Context Compiler for Onceaponatime Literary Mechanics
@@ -402,6 +403,96 @@ export function compileGenerationContext(
     recentBeatCount
   );
 
+  // 10. Progressive Memory Codex Synthesis (Epistemically bounded)
+  const fullCodex = synthesizeCodex(project);
+  const accumulatedCodexEntities = fullCodex
+    .filter((ent) => {
+      // Include if present at current location, or known to POV actor
+      if (ent.current_location_id === currentPosition.location_id) return true;
+      if (knownEntitiesSet.has(ent.id)) return true;
+      if (ent.id === povActor.id) return true;
+      return false;
+    })
+    .map((ent) => {
+      const isCanonicalKnown = knownEntitiesSet.has(ent.id) || ent.id === povActor.id;
+      const perception = actorKnowledge.known_entity_perceptions?.[ent.id];
+      const fallbackLabel = ent.entity_type === 'actor' ? 'unidentified person' : (ent.entity_type === 'object' ? 'unidentified object' : 'unidentified entity');
+      const perceivedLabel =
+        perception?.perceived_label ||
+        (isCanonicalKnown
+          ? (ent.canonical_label || ent.working_label)
+          : fallbackLabel);
+
+      // Filter claims to ensure no secret canonical names or working labels leak to unauthorized POV
+      const supportedClaims = (ent.claims || [])
+        .filter((c) => c.status === 'supported')
+        .map((c) => {
+          let text = c.claim;
+          if (!isCanonicalKnown) {
+            if (ent.canonical_label && text.includes(ent.canonical_label)) {
+              text = text.replace(new RegExp(ent.canonical_label, 'g'), perceivedLabel);
+            }
+            if (ent.working_label && text.includes(ent.working_label)) {
+              text = text.replace(new RegExp(ent.working_label, 'g'), perceivedLabel);
+            }
+          }
+          return text;
+        });
+
+      const contradictedClaims = (ent.claims || [])
+        .filter((c) => c.status === 'contradicted')
+        .map((c) => {
+          let text = `${c.claim} (${c.contradiction_notes || 'conflicting observations'})`;
+          if (!isCanonicalKnown) {
+            if (ent.canonical_label && text.includes(ent.canonical_label)) {
+              text = text.replace(new RegExp(ent.canonical_label, 'g'), perceivedLabel);
+            }
+            if (ent.working_label && text.includes(ent.working_label)) {
+              text = text.replace(new RegExp(ent.working_label, 'g'), perceivedLabel);
+            }
+          }
+          return text;
+        });
+
+      const rels = (ent.relationships || [])
+        .map((r) => `${r.type} -> ${r.target_id}`);
+
+      return {
+        id: ent.id,
+        label: perceivedLabel,
+        type: ent.entity_type,
+        classification_confidence: ent.classification_confidence,
+        reliability: ent.reliability,
+        salience: ent.salience,
+        distinct_evidence_count: ent.distinct_evidence_count,
+        current_holder_id: ent.current_holder_id,
+        current_location_id: ent.current_location_id,
+        supported_claims: supportedClaims,
+        contradicted_claims: contradictedClaims,
+        relationships: rels,
+      };
+    });
+
+  // 11. Continuity Constraints (Preventing False Holdings & Spatial Violations)
+  const continuityConstraints: string[] = [];
+  for (const obj of presentObjects) {
+    const objLabel = obj.identity.working_label || obj.identity.name || obj.id;
+    if (!obj.current_holder_id) {
+      continuityConstraints.push(
+        `[INVENTORY CONTINUITY] "${objLabel}" (${obj.id}) is resting in the scene (current_holder_id: null). It is NOT held by ${povActor.identity.name || 'POV Actor'}. Do NOT place it in hands or inventory unless an explicit pickup beat occurs.`
+      );
+    } else if (obj.current_holder_id !== povActor.id) {
+      const holder = project.actors.find((a) => a.id === obj.current_holder_id);
+      const hPerception = holder ? actorKnowledge.known_entity_perceptions?.[holder.id] : undefined;
+      const isHolderKnown = holder ? (knownEntitiesSet.has(holder.id) || (hPerception?.perceived_name !== undefined && hPerception?.perceived_name !== null)) : false;
+      const holderLabel = hPerception?.perceived_label || (isHolderKnown && holder ? (holder.identity.name || holder.identity.working_label) : 'an unidentified person');
+
+      continuityConstraints.push(
+        `[INVENTORY CONTINUITY] "${objLabel}" (${obj.id}) is carried by ${holderLabel}. It is NOT available in ${povActor.identity.name || 'POV Actor'}'s inventory.`
+      );
+    }
+  }
+
   return {
     operatingMode: operation,
     narrativeDistance,
@@ -424,6 +515,8 @@ export function compileGenerationContext(
     relevantOpenThreads,
     permittedForeshadowingCues,
     recentProse,
+    accumulatedCodexEntities,
+    continuityConstraints,
     rewriteContract: operation === 'TRANSFORMATION' ? rewriteContract : null,
   };
 }

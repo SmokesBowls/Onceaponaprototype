@@ -9,6 +9,7 @@ import {
   MentionRecord,
 } from '../src/types';
 import { getModelProvider, ModelProvider } from './modelProvider';
+import { detectEntityInteractions } from './codexEngine';
 
 /**
  * STAGE 1: Beat Planner
@@ -600,12 +601,22 @@ OUTPUT SCHEMA:
         ],
       }));
 
+      const rawPossessionChanges = Array.isArray(parsed.stateChanges?.possession_changes)
+        ? parsed.stateChanges.possession_changes
+        : [];
+      const verifiedPossessionChanges = rawPossessionChanges.filter((pc: any) => {
+        const obj = existingObjects.find((o) => o.id === pc.object_id);
+        const objLabel = obj?.identity.working_label || obj?.identity.name || pc.object_id;
+        const interaction = detectEntityInteractions(prose, objLabel);
+        return interaction.isPossession || interaction.isRelease;
+      });
+
       return {
         mentions: mentions.length > 0 ? mentions : generateDeterministicMentions(params),
         proposedNewEntities: Array.isArray(parsed.proposedNewEntities) ? parsed.proposedNewEntities : [],
         stateChanges: {
           location_changes: Array.isArray(parsed.stateChanges?.location_changes) ? parsed.stateChanges.location_changes : [],
-          possession_changes: Array.isArray(parsed.stateChanges?.possession_changes) ? parsed.stateChanges.possession_changes : [],
+          possession_changes: verifiedPossessionChanges,
           actor_state_changes: Array.isArray(parsed.stateChanges?.actor_state_changes) ? parsed.stateChanges.actor_state_changes : [],
           belief_changes: Array.isArray(parsed.stateChanges?.belief_changes) ? parsed.stateChanges.belief_changes : [],
           thread_advancements: Array.isArray(parsed.stateChanges?.thread_advancements) ? parsed.stateChanges.thread_advancements : [],

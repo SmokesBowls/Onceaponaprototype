@@ -483,4 +483,193 @@ export const DEFAULT_PROJECTS: StoryProject[] = [
     },
     temporalHistory: [],
   },
+  {
+    id: 'proj_crossroads',
+    title: 'The Crossroads of Ash',
+    description: 'A solitary traveler arrives at an overgrown crossroads where an abandoned stone well holds an unexplained brass relic.',
+    currentPosition: {
+      act: 'Act I',
+      chapter: 'Chapter 1: The Ash Road',
+      scene: 'Scene 1: The Crossroads',
+      beat: 2,
+      location_id: 'location_crossroads',
+      location_label: 'The Crossroads',
+    },
+    activePovActorId: 'actor_traveler',
+    manuscript: [
+      {
+        id: 'beat_crossroads_01',
+        beatNumber: 1,
+        text: 'The traveler saw an abandoned stone well beside the overgrown junction. A small brass device rested on the well, emitting a slow amber light across the damp masonry.',
+        povActorId: 'actor_traveler',
+        locationId: 'location_crossroads',
+        acceptedAt: 1725000000000,
+      },
+    ],
+    actors: [
+      {
+        id: 'actor_traveler',
+        identity: {
+          name: 'The Traveler',
+          working_label: 'the solitary traveler',
+          aliases: ['Traveler'],
+        },
+        roles: {
+          story: ['protagonist', 'wanderer'],
+          scene: ['observer', 'POV'],
+        },
+        traits: {
+          cautious: 0.85,
+          observant: 0.9,
+        },
+        current_state: {
+          fatigue: 0.3,
+          fear: 0.1,
+          certainty: 0.2,
+          emotion: 'watchful and hesitant',
+        },
+        active_goals: ['Reach the northern boundary', 'Investigate the amber signal'],
+        current_location_id: 'location_crossroads',
+        possessions: [], // Traveler is NOT holding the well or the device!
+        isPresent: true,
+      },
+    ],
+    objects: [
+      {
+        id: 'object_well',
+        identity: {
+          name: null,
+          working_label: 'abandoned stone well',
+          aliases: ['the stone well', 'the well'],
+        },
+        current_holder_id: null, // NOT held by traveler!
+        current_location_id: 'location_crossroads',
+        status: 'intact',
+        salience: 0.7,
+        isPresent: true,
+      },
+      {
+        id: 'object_brass_device',
+        identity: {
+          name: null,
+          working_label: 'small brass device',
+          aliases: ['the brass device', 'the device'],
+        },
+        current_holder_id: null, // NOT held by traveler! Rested on the well.
+        current_location_id: 'location_crossroads',
+        status: 'intact',
+        salience: 0.85,
+        isPresent: true,
+      },
+    ],
+    locations: [
+      {
+        id: 'location_crossroads',
+        identity: {
+          name: 'The Crossroads',
+          working_label: 'the overgrown crossroads',
+          aliases: ['The Junction', 'Crossroads of Ash'],
+        },
+        parent_location_id: null,
+        connected_locations: [],
+        description_summary: 'A deserted four-way wagon trail flanked by tangled briars and weathered distance markers.',
+      },
+    ],
+    factions: [],
+    facts: [
+      {
+        id: 'fact_crossroads_01',
+        statement: 'A small brass device rests atop an abandoned stone well at the Crossroads.',
+        status: 'established',
+        confidence: 0.95,
+        provenance: {
+          chapter: 'Chapter 1',
+          scene: 'Scene 1',
+          beat: 1,
+          evidence_quote: 'A small brass device rested on the well, emitting a slow amber light.',
+        },
+      },
+    ],
+    threads: [
+      {
+        id: 'thread_crossroads_01',
+        label: 'Discover who left the amber brass device on the stone well',
+        status: 'open',
+        importance: 'major',
+        introduced_in: 'Chapter 1: Beat 1',
+        resolution_allowed: false,
+      },
+    ],
+    reveals: [],
+    mentions: [
+      {
+        id: 'mention_crossroads_01',
+        entity_id: 'actor_traveler',
+        passage_text: 'The traveler saw an abandoned stone well',
+        scene_id: 'scene_001',
+        beat_index: 1,
+        timestamp_label: 'T1: Scene 1 Beat 1',
+        confidence: 1.0,
+        evidence_notes: ['POV character entry at the crossroads.'],
+        extracted_relationships: [{ type: 'located_at', target_id: 'location_crossroads' }],
+      },
+      {
+        id: 'mention_crossroads_02',
+        entity_id: 'object_well',
+        passage_text: 'saw an abandoned stone well beside the overgrown junction',
+        scene_id: 'scene_001',
+        beat_index: 1,
+        timestamp_label: 'T1: Scene 1 Beat 1',
+        confidence: 0.95,
+        evidence_notes: ['Well spotted by traveler (Perception only, NOT possession).'],
+        extracted_relationships: [
+          { type: 'located_at', target_id: 'location_crossroads' },
+        ],
+      },
+      {
+        id: 'mention_crossroads_03',
+        entity_id: 'object_brass_device',
+        passage_text: 'A small brass device rested on the well, emitting a slow amber light',
+        scene_id: 'scene_001',
+        beat_index: 1,
+        timestamp_label: 'T1: Scene 1 Beat 1',
+        confidence: 0.95,
+        evidence_notes: ['Device resting on well (Spatial resting, NOT held by traveler).'],
+        extracted_relationships: [
+          { type: 'located_at', target_id: 'location_crossroads' },
+        ],
+      },
+    ],
+    knowledge: {
+      world_truth: ['fact_crossroads_01'],
+      reader_knowledge: ['fact_crossroads_01'],
+      actor_knowledge: {
+        actor_traveler: {
+          known_facts: ['fact_crossroads_01'],
+          beliefs: ['The device was placed there recently.'],
+          forbidden_knowledge: [],
+        },
+      },
+    },
+    temporalHistory: [
+      {
+        time_index: 'T1',
+        label: 'Arrival at Crossroads',
+        beat_ref: 'Beat 1',
+        entity_locations: {
+          actor_traveler: 'location_crossroads',
+          object_well: 'location_crossroads',
+          object_brass_device: 'location_crossroads',
+        },
+        object_possessions: {
+          object_well: null,
+          object_brass_device: null,
+        },
+        actor_states: {
+          actor_traveler: { fatigue: 0.3, emotion: 'watchful' },
+        },
+        unlocked_reveals: [],
+      },
+    ],
+  },
 ];

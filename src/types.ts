@@ -18,6 +18,119 @@ export interface EntityIdentity {
   aliases: string[];
 }
 
+export type NarrativeRelationshipType =
+  | 'mentions'
+  | 'sees'
+  | 'notices'
+  | 'approaches'
+  | 'touches'
+  | 'uses'
+  | 'carries'
+  | 'holds'
+  | 'owns'
+  | 'possesses'
+  | 'stands_beside'
+  | 'is_located_near'
+  | 'located_at'
+  | 'associated_with'
+  | 'rests_on';
+
+export interface EntityClaim {
+  id: string;
+  claim: string; // e.g. "is made of stone", "is a well", "emits amber light"
+  status: 'supported' | 'provisional' | 'unsupported' | 'contradicted';
+  evidence_beats: number[];
+  evidence_quotes: string[];
+  evidence_count: number;
+  contradiction_notes?: string;
+  first_seen_beat?: number;
+  last_seen_beat?: number;
+}
+
+export interface ProvenanceRecord {
+  id: string;
+  project_id?: string;
+  chapter?: string;
+  beat: number;
+  temporal_state: string; // e.g. "T1"
+  pov_actor_id: string;
+  source_text: string;
+  entity_mention: string;
+  claim_produced?: string;
+  relationship_produced?: string;
+  state_transformation_produced?: string;
+  reliability_delta?: number;
+  timestamp: number;
+}
+
+export interface EntityRelationship {
+  id: string;
+  type: NarrativeRelationshipType;
+  source_id: string;
+  target_id: string;
+  status: 'supported' | 'provisional' | 'historical' | 'unsupported';
+  established_beat: number;
+  evidence_quote?: string;
+}
+
+export interface CodexEntity {
+  id: string;
+  working_label: string;
+  canonical_label?: string | null;
+  entity_type: string; // 'actor' | 'creature' | 'object' | 'landmark' | 'structure' | 'location' | 'faction' | 'concept' | 'event' | 'phenomenon' | 'provisional'
+  classification_confidence: 'provisional' | 'resolved';
+  candidate_types?: string[]; // e.g. ['landmark', 'location', 'structure', 'object']
+  reliability: number; // 0.0 to 1.0 (0% to 100%)
+  salience: number; // 0.0 to 1.0
+  mention_count: number;
+  distinct_evidence_count: number;
+  first_seen: string; // e.g. "Beat 1 (T1)"
+  last_seen: string; // e.g. "Beat 3 (T3)"
+  aliases: string[];
+  claims: EntityClaim[];
+  evidence: ProvenanceRecord[];
+  relationships: EntityRelationship[];
+  current_state?: Record<string, any>;
+  current_holder_id?: string | null;
+  current_location_id?: string | null;
+  isPresent?: boolean;
+  is_author_locked?: boolean;
+}
+
+/**
+ * Deterministic Baseline Reliability Progression:
+ * 1 distinct canonical evidence occurrence = 0%
+ * 2 = 25%
+ * 3 = 45%
+ * 4 = 60%
+ * 5 = 72%
+ * 6 = 82%
+ * 7 = 89%
+ * 8 = 94%
+ * 9 = 97%
+ * 10+ = approach 100%
+ */
+export function calculateReliability(distinctEvidenceCount: number, isAuthorLocked: boolean = false): number {
+  if (isAuthorLocked) return 1.0;
+  if (distinctEvidenceCount <= 0) return 0.0;
+  if (distinctEvidenceCount === 1) return 0.0;
+  const progression: Record<number, number> = {
+    2: 0.25,
+    3: 0.45,
+    4: 0.60,
+    5: 0.72,
+    6: 0.82,
+    7: 0.89,
+    8: 0.94,
+    9: 0.97,
+  };
+  if (progression[distinctEvidenceCount] !== undefined) {
+    return progression[distinctEvidenceCount];
+  }
+  const val = 0.97 + (distinctEvidenceCount - 9) * 0.004;
+  return Math.min(0.99, Math.round(val * 100) / 100);
+}
+
 export interface ActorEntity {
   id: string; // e.g. "actor_001"
   identity: EntityIdentity;
@@ -36,6 +149,16 @@ export interface ActorEntity {
   current_location_id: string;
   possessions: string[]; // object IDs
   isPresent: boolean;
+  reliability?: number;
+  salience?: number;
+  classification_confidence?: 'provisional' | 'resolved';
+  candidate_types?: string[];
+  claims?: EntityClaim[];
+  evidence?: ProvenanceRecord[];
+  relationships?: EntityRelationship[];
+  first_seen?: string;
+  last_seen?: string;
+  is_author_locked?: boolean;
 }
 
 export interface ObjectEntity {
@@ -46,6 +169,15 @@ export interface ObjectEntity {
   status: 'intact' | 'damaged' | 'destroyed' | 'missing';
   salience: number; // 0.0 to 1.0 based on mentions & connections
   isPresent: boolean;
+  reliability?: number;
+  classification_confidence?: 'provisional' | 'resolved';
+  candidate_types?: string[];
+  claims?: EntityClaim[];
+  evidence?: ProvenanceRecord[];
+  relationships?: EntityRelationship[];
+  first_seen?: string;
+  last_seen?: string;
+  is_author_locked?: boolean;
 }
 
 export interface LocationEntity {
@@ -54,6 +186,16 @@ export interface LocationEntity {
   parent_location_id: string | null;
   connected_locations: string[];
   description_summary: string;
+  reliability?: number;
+  salience?: number;
+  classification_confidence?: 'provisional' | 'resolved';
+  candidate_types?: string[];
+  claims?: EntityClaim[];
+  evidence?: ProvenanceRecord[];
+  relationships?: EntityRelationship[];
+  first_seen?: string;
+  last_seen?: string;
+  is_author_locked?: boolean;
 }
 
 export interface FactionEntity {
@@ -219,6 +361,21 @@ export interface GenerationContext {
   }>;
   permittedForeshadowingCues: string[];
   recentProse: string;
+  accumulatedCodexEntities?: Array<{
+    id: string;
+    label: string;
+    type: string;
+    classification_confidence: string;
+    reliability: number;
+    salience: number;
+    distinct_evidence_count: number;
+    current_holder_id: string | null;
+    current_location_id: string | null;
+    supported_claims: string[];
+    contradicted_claims: string[];
+    relationships: string[];
+  }>;
+  continuityConstraints?: string[];
   rewriteContract: RewriteContract | null;
 }
 
@@ -326,6 +483,7 @@ export interface StoryProject {
   mentions: MentionRecord[];
   knowledge: KnowledgeBoundaries;
   temporalHistory: TemporalSnapshot[];
+  codexEntities?: CodexEntity[];
 }
 
 export interface BenchmarkTestCase {
