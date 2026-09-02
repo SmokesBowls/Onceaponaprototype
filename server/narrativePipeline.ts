@@ -9,7 +9,7 @@ import {
   MentionRecord,
 } from '../src/types';
 import { getModelProvider, ModelProvider } from './modelProvider';
-import { detectEntityInteractions } from './codexEngine';
+import { detectEntityInteractions } from '../src/lib/codexEngine';
 
 /**
  * STAGE 1: Beat Planner
@@ -194,20 +194,50 @@ STRICT RENDERING DIRECTIVES:
    - SEQUENCE: 1-2 rich paragraphs.
    - SCENE: A full scene passage.
 4. POV RESTRICTION: Maintain close perspective of ${povActor.identity.name || povActor.identity.working_label}.
-5. REWRITE PRESERVATION: If rewrite contract is present, follow modify/preserve/forbid constraints strictly.`;
+5. REWRITE PRESERVATION: If rewrite contract is present, follow modify/preserve/forbid constraints strictly.
+6. PHYSICAL & SPATIAL CONTINUITY: Respect all continuity constraints strictly. If an object is resting or held by another character, do NOT narrate the POV actor holding or carrying it unless an explicit pickup beat was planned.
+7. ACCUMULATED CODEX & AUTHORIZED STORY REALITY: Use the authorized narrative memory (accumulated claims, observed characteristics, reliability scores, and physical states). Describe uncorroborated or provisional elements with observational restraint matching their reliability.`;
+
+  // Format rich Codex entities for prose rendering
+  const codexFormatted = (generationContext.accumulatedCodexEntities || []).map((ent) => {
+    const supported = (ent.supported_claims || []).map((c) => `    - [verified] ${c}`);
+    const contradicted = (ent.contradicted_claims || []).map((c) => `    - [CONTRADICTED] ${c}`);
+    const allClaims = [...supported, ...contradicted].join('\n');
+    const rels = (ent.relationships || []).map((r) => `    - ${r}`).join('\n');
+    return `* [${ent.id}] "${ent.label}" (${ent.type}, ${ent.classification_confidence}, ${Math.round(ent.reliability * 100)}% reliability)
+  Holder: ${ent.current_holder_id ? `held by ${ent.current_holder_id}` : 'unheld / resting'} | Location: ${ent.current_location_id || 'local'}
+  Evidence count: ${ent.distinct_evidence_count} beats
+  Claims:\n${allClaims || '    - None recorded'}${rels ? `\n  Relationships:\n${rels}` : ''}`;
+  }).join('\n\n');
+
+  // Format continuity constraints
+  const continuityFormatted = (generationContext.continuityConstraints || []).length > 0
+    ? generationContext.continuityConstraints.map((c) => `- ${c}`).join('\n')
+    : 'None (standard physical continuity applies)';
 
   const userPrompt = `TASK: Render Prose for ${op}
 
 APPROVED STAGE 1 PLAN:
 ${JSON.stringify(approvedPlan, null, 2)}
 
-AUTHORIZED GENERATION CONTEXT:
+CONTINUITY & INVENTORY CONSTRAINTS:
+${continuityFormatted}
+
+ACCUMULATED STORY CODEX (AUTHORIZED NARRATIVE REALITY):
+${codexFormatted || 'No accumulated codex entities in scope.'}
+
+AUTHORIZED GENERATION CONTEXT SUMMARY:
 - Active POV: ${povActor.identity.name || povActor.identity.working_label} (${povActor.id})
 - Current Location: ${generationContext.currentLocation?.working_label || generationContext.currentLocation?.name || 'Local area'}
 - Present Entities: ${generationContext.presentEntities.map((e) => `${e.label} (${e.id})`).join(', ') || 'None'}
 - Relevant Possessions: ${generationContext.relevantPossessions.map((p) => `${p.label} (held by ${p.holderName || 'nobody'})`).join(', ') || 'None'}
-- Permitted Cues: ${generationContext.permittedForeshadowingCues.join('; ') || 'None'}
-- Sincere Beliefs: ${generationContext.sincereBeliefs.join('; ') || 'None'}
+- Known Facts: ${(generationContext.knownFacts || []).map((f) => `"${f.statement}"`).join('; ') || 'None'}
+- Sincere Beliefs: ${(generationContext.sincereBeliefs || []).join('; ') || 'None'}
+- Permitted Foreshadowing Cues: ${(generationContext.permittedForeshadowingCues || []).join('; ') || 'None'}
+- Relevant Open Threads: ${(generationContext.relevantOpenThreads || []).map((t) => `${t.label} (${t.id})`).join('; ') || 'None'}
+
+FULL AUTHORIZED GENERATION CONTEXT:
+${JSON.stringify(generationContext, null, 2)}
 
 RECENT MANUSCRIPT PROSE:
 """
@@ -215,7 +245,7 @@ ${generationContext.recentProse || '(Opening of manuscript)'}
 """
 
 OUTPUT:
-Write ONLY the high-craft narrative prose adhering strictly to the plan.`;
+Write ONLY the high-craft narrative prose adhering strictly to the plan and authorized memory.`;
 
   if (!provider.isAvailable()) {
     return generateLocalProse(generationContext, approvedPlan);
@@ -604,10 +634,19 @@ OUTPUT SCHEMA:
       const rawPossessionChanges = Array.isArray(parsed.stateChanges?.possession_changes)
         ? parsed.stateChanges.possession_changes
         : [];
+      const povActor = existingActors.find((a) => a.id === povActorId);
+      const povActorLabel = povActor ? (povActor.identity.name || povActor.identity.working_label) : undefined;
+      const knownActorsList = existingActors.map((a) => ({
+        id: a.id,
+        name: a.identity.name,
+        working_label: a.identity.working_label,
+        aliases: a.identity.aliases || [],
+      }));
+
       const verifiedPossessionChanges = rawPossessionChanges.filter((pc: any) => {
         const obj = existingObjects.find((o) => o.id === pc.object_id);
         const objLabel = obj?.identity.working_label || obj?.identity.name || pc.object_id;
-        const interaction = detectEntityInteractions(prose, objLabel);
+        const interaction = detectEntityInteractions(prose, objLabel, povActorLabel, knownActorsList);
         return interaction.isPossession || interaction.isRelease;
       });
 

@@ -8,7 +8,7 @@ import {
   ValidationContext,
   KnowledgeBoundaries,
 } from '../src/types';
-import { synthesizeCodex } from './codexEngine';
+import { synthesizeCodex } from '../src/lib/codexEngine';
 
 /**
  * Dedicated Context Compiler for Onceaponatime Literary Mechanics

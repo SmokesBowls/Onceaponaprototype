@@ -17,7 +17,7 @@ function assert(condition: boolean, message: string) {
   console.log(`  ✓ ${message}`);
 }
 
-export function runCodexTests() {
+export async function runCodexTests() {
   console.log('\n=== RUNNING PROGRESSIVE NARRATIVE MEMORY & CODEX TESTS ===\n');
 
   // -------------------------------------------------------------
@@ -198,9 +198,9 @@ export function runCodexTests() {
   assert(glowClaims[1].contradiction_notes !== undefined, 'Contradiction notes attached to second claim');
 
   // -------------------------------------------------------------
-  // TEST 6: Stage 1 Authorized Context Package Verification
+  // TEST 6: Stage 1 & Stage 2 Authorized Context Package Verification
   // -------------------------------------------------------------
-  console.log('\n--- TEST 6: Stage 1 Generation Context Package Integration ---');
+  console.log('\n--- TEST 6: Stage 1 & Stage 2 Generation Context Package Integration ---');
   const genContext = compileGenerationContext({
     project: crossroadsProject,
     activePovActorId: 'actor_traveler',
@@ -215,10 +215,524 @@ export function runCodexTests() {
   const hasInventoryConstraint = genContext.continuityConstraints?.some((c) => c.includes('is resting in the scene (current_holder_id: null)'));
   assert(hasInventoryConstraint, 'Continuity constraint explicitly prevents false holding of resting object');
 
+  // -------------------------------------------------------------
+  // TEST 7: Stage 2 Prose Renderer Prompt Delivery Verification
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 7: Stage 2 Prose Renderer Full Memory Delivery ---');
+  let capturedStage2UserPrompt = '';
+  let capturedStage2SystemPrompt = '';
+
+  const mockProvider = {
+    isAvailable: () => true,
+    generateText: async (params: { systemPrompt: string; userPrompt: string }) => {
+      capturedStage2SystemPrompt = params.systemPrompt;
+      capturedStage2UserPrompt = params.userPrompt;
+      return { text: 'The traveler observed the quiet well from the edge of the crossroads.' };
+    },
+  };
+
+  const dummyPlan = {
+    beat_type: 'observation' as const,
+    primary_actor_id: 'actor_traveler',
+    intended_action: 'Observe the stone well and resting brass device',
+    permitted_entities_involved: ['actor_traveler', 'object_well', 'object_brass_device'],
+    permitted_state_transitions: [],
+    knowledge_verified: false,
+    reveals_protected: false,
+    threads_advanced: [],
+    threads_resolved: [],
+    distance_budget: 'BEAT' as const,
+  };
+
+  const { renderNarrativeProse } = await import('../server/narrativePipeline');
+  await renderNarrativeProse(genContext, dummyPlan, mockProvider as any);
+
+  assert(capturedStage2UserPrompt.includes('ACCUMULATED STORY CODEX (AUTHORIZED NARRATIVE REALITY)'), 'Stage 2 user prompt contains ACCUMULATED STORY CODEX section');
+  assert(capturedStage2UserPrompt.includes('CONTINUITY & INVENTORY CONSTRAINTS'), 'Stage 2 user prompt contains CONTINUITY & INVENTORY CONSTRAINTS section');
+  assert(capturedStage2UserPrompt.includes('object_brass_device'), 'Stage 2 receives brass device codex entity');
+  assert(capturedStage2UserPrompt.includes('current_holder_id: null'), 'Stage 2 receives resting holder status in continuity constraints');
+  assert(capturedStage2SystemPrompt.includes('ACCUMULATED CODEX & AUTHORIZED STORY REALITY'), 'Stage 2 system prompt instructs model on authorized codex memory');
+  assert(capturedStage2SystemPrompt.includes('PHYSICAL & SPATIAL CONTINUITY'), 'Stage 2 system prompt instructs model on physical continuity');
+
+  // -------------------------------------------------------------
+  // TEST 8: Grammatical Subject Determination for Possession Actions
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 8: Grammatical Subject Determination for Possession Actions ---');
+  const multiActorProject: StoryProject = {
+    id: 'proj_multi_actor_test',
+    title: 'Multi Actor Possession Test',
+    description: 'Testing Mara picking up device in Tran POV beat',
+    currentPosition: {
+      act: 'Act I',
+      chapter: 'Chapter 1',
+      scene: 'Scene 1',
+      beat: 1,
+      location_id: 'loc_study',
+      location_label: 'The Study',
+    },
+    activePovActorId: 'actor_tran',
+    manuscript: [
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'Tran watched in silence as Mara picked up the brass device and slipped it into her pocket.',
+        povActorId: 'actor_tran',
+        locationId: 'loc_study',
+        acceptedAt: 1725000000000,
+      },
+    ],
+    actors: [
+      {
+        id: 'actor_tran',
+        identity: { name: 'Tran', working_label: 'tran', aliases: [] },
+        roles: { story: ['protagonist'], scene: ['observer'] },
+        traits: {},
+        current_state: { fatigue: 0.1, fear: 0.1, certainty: 0.5, emotion: 'silent' },
+        active_goals: ['Watch Mara'],
+        current_location_id: 'loc_study',
+        possessions: [],
+        isPresent: true,
+      },
+      {
+        id: 'actor_mara',
+        identity: { name: 'Mara', working_label: 'mara', aliases: [] },
+        roles: { story: ['antagonist'], scene: ['actor'] },
+        traits: {},
+        current_state: { fatigue: 0.1, fear: 0.1, certainty: 0.9, emotion: 'determined' },
+        active_goals: ['Acquire device'],
+        current_location_id: 'loc_study',
+        possessions: [],
+        isPresent: true,
+      },
+    ],
+    objects: [
+      {
+        id: 'object_brass_device',
+        identity: { name: null, working_label: 'brass device', aliases: ['the device'] },
+        current_holder_id: null,
+        current_location_id: 'loc_study',
+        status: 'intact',
+        salience: 0.9,
+        isPresent: true,
+      },
+    ],
+    locations: [
+      {
+        id: 'loc_study',
+        identity: { name: 'The Study', working_label: 'the study', aliases: [] },
+        parent_location_id: null,
+        connected_locations: [],
+        description_summary: 'A quiet study.',
+      },
+    ],
+    factions: [],
+    facts: [],
+    threads: [],
+    reveals: [],
+    mentions: [],
+    knowledge: {
+      world_truth: [],
+      reader_knowledge: [],
+      actor_knowledge: {
+        actor_tran: {
+          known_facts: [],
+          beliefs: [],
+          forbidden_knowledge: [],
+        },
+      },
+    },
+    temporalHistory: [],
+  };
+
+  const synthesizedMulti = synthesizeCodex(multiActorProject);
+  const deviceInMulti = synthesizedMulti.find((e) => e.id === 'object_brass_device');
+
+  assert(!!deviceInMulti, 'Device synthesized in multi-actor project codex');
+  assert(
+    deviceInMulti?.current_holder_id === 'actor_mara',
+    `Device current_holder_id is correctly assigned to Mara (actor_mara), NOT POV actor Tran (actor_tran). Actual: ${deviceInMulti?.current_holder_id}`
+  );
+
+  // Test direct interaction parsing with known actors
+  const interactionWithActors = detectEntityInteractions(
+    'Tran watched in silence as Mara picked up the brass device and slipped it into her pocket.',
+    'brass device',
+    'Tran',
+    [
+      { id: 'actor_tran', name: 'Tran', working_label: 'tran' },
+      { id: 'actor_mara', name: 'Mara', working_label: 'mara' },
+    ]
+  );
+  assert(interactionWithActors.isPossession, 'Direct interaction detects possession');
+  assert(interactionWithActors.actingSubjectId === 'actor_mara', 'Direct interaction detects actor_mara as acting subject');
+  assert(interactionWithActors.actingSubjectLabel === 'Mara', 'Direct interaction detects Mara as acting subject label');
+
+  // -------------------------------------------------------------
+  // TEST 9: Reliability Rises from Distinct Information/Claims, NOT Passive Mentions
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 9: Reliability Rises from Distinct Claims, NOT Passive Mentions ---');
+  
+  // Scenario A: 3 passive mentions with no new information
+  const passiveMentionsProject: StoryProject = {
+    ...crossroadsProject,
+    id: 'proj_passive_test',
+    manuscript: [
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'The brass device glowed.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000000000,
+      },
+      {
+        id: 'beat_02',
+        beatNumber: 2,
+        text: 'He looked again at the brass device.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000001000,
+      },
+      {
+        id: 'beat_03',
+        beatNumber: 3,
+        text: 'He walked past the brass device.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000002000,
+      },
+    ],
+  };
+
+  const synthesizedPassive = synthesizeCodex(passiveMentionsProject);
+  const passiveDevice = synthesizedPassive.find((e) => e.id === 'object_brass_device');
+
+  assert(!!passiveDevice, 'Device exists in synthesized codex for passive mentions');
+  assert(passiveDevice?.mention_count === 3, `Device has 3 mentions. Actual: ${passiveDevice?.mention_count}`);
+  assert(
+    passiveDevice?.distinct_evidence_count === 1,
+    `Device distinct evidence count is strictly 1 after 3 passive mentions without new information. Actual: ${passiveDevice?.distinct_evidence_count}`
+  );
+  assert(
+    passiveDevice?.reliability === 0.0,
+    `Device reliability is strictly 0% (0.0) after 3 uninformative mentions. Actual: ${passiveDevice?.reliability}`
+  );
+
+  // Scenario B: Subsequent beats provide NEW distinct claims and corroborations
+  const informativeProject: StoryProject = {
+    ...crossroadsProject,
+    id: 'proj_informative_test',
+    manuscript: [
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'The brass device glowed with amber light.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000000000,
+      },
+      {
+        id: 'beat_02',
+        beatNumber: 2,
+        text: 'He touched the cold metal casing of the brass device and discovered three interlocking clockwork gears on the side.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000001000,
+      },
+      {
+        id: 'beat_03',
+        beatNumber: 3,
+        text: 'In the pitch darkness, the device glowed with amber light once more.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000002000,
+      },
+    ],
+  };
+
+  const synthesizedInformative = synthesizeCodex(informativeProject);
+  const informativeDevice = synthesizedInformative.find((e) => e.id === 'object_brass_device');
+
+  assert(!!informativeDevice, 'Informative device exists in synthesized codex');
+  assert(
+    (informativeDevice?.distinct_evidence_count || 0) >= 3,
+    `Informative device distinct evidence count rises with new claims and corroborations. Actual: ${informativeDevice?.distinct_evidence_count}`
+  );
+  assert(
+    (informativeDevice?.reliability || 0) >= 0.45,
+    `Informative device reliability rises to at least 45% (0.45) with new claims and corroborations. Actual: ${informativeDevice?.reliability}`
+  );
+
+  // -------------------------------------------------------------
+  // TEST 10: Open-World Novel Entity Discovery from Raw Prose (No Pre-Populated Registries)
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 10: Open-World Novel Entity Discovery from Raw Prose ---');
+  
+  const rawProseProject: StoryProject = {
+    id: 'proj_open_world_test',
+    title: 'The Moth and the Well',
+    description: 'A traveler arrives at an uncharted ruins.',
+    activePovActorId: 'actor_traveler',
+    currentPosition: {
+      act: 'Act I',
+      chapter: 'Chapter 1',
+      scene: 'Scene 1',
+      beat: 2,
+      location_id: 'loc_unknown',
+      location_label: 'Unknown Ruins',
+    },
+    actors: [
+      {
+        id: 'actor_traveler',
+        identity: {
+          name: 'The Traveler',
+          working_label: 'traveler',
+          aliases: [],
+        },
+        roles: { story: ['protagonist'], scene: ['active'] },
+        traits: {},
+        current_state: { fatigue: 0.1, fear: 0.1, certainty: 0.2, emotion: 'watchful' },
+        active_goals: ['Explore'],
+        current_location_id: 'loc_unknown',
+        possessions: [],
+        isPresent: true,
+        is_author_locked: false,
+      },
+    ],
+    objects: [], // STRICTLY EMPTY: No pre-created objects
+    locations: [], // STRICTLY EMPTY: No pre-created locations
+    factions: [], // STRICTLY EMPTY: No pre-created factions
+    codexEntities: [], // STRICTLY EMPTY: No pre-existing codex records
+    facts: [],
+    threads: [],
+    reveals: [],
+    mentions: [],
+    knowledge: {
+      world_truth: [],
+      reader_knowledge: [],
+      actor_knowledge: {},
+    },
+    temporalHistory: [],
+    manuscript: [
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'A silver moth landed on the window. In the courtyard, the stone well stood in silence.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_unknown',
+        acceptedAt: 1725000000000,
+      },
+      {
+        id: 'beat_02',
+        beatNumber: 2,
+        text: 'The silver moth fluttered into the air and circled the stone well.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_unknown',
+        acceptedAt: 1725000001000,
+      },
+    ],
+  };
+
+  // Synthesize on Beat 1 only
+  const beat1OnlyProject: StoryProject = {
+    ...rawProseProject,
+    manuscript: [rawProseProject.manuscript[0]],
+  };
+  const synthesizedBeat1 = synthesizeCodex(beat1OnlyProject);
+  const mothBeat1 = synthesizedBeat1.find(
+    (e) => e.working_label.toLowerCase().includes('moth') || e.id.includes('moth')
+  );
+  assert(!!mothBeat1, 'Prose-introduced "silver moth" is discovered on Beat 1');
+  assert(mothBeat1?.classification_confidence === 'provisional', 'Discovered moth begins with provisional classification confidence on first encounter');
+  assert(mothBeat1?.reliability === 0.0, 'Discovered moth starts at 0% reliability on first encounter');
+
+  // Synthesize on full 2 beats
+  const synthesizedRaw = synthesizeCodex(rawProseProject);
+  
+  const mothEntity = synthesizedRaw.find(
+    (e) => e.working_label.toLowerCase().includes('moth') || e.id.includes('moth')
+  );
+  const wellEntity = synthesizedRaw.find(
+    (e) => e.working_label.toLowerCase().includes('well') || e.id.includes('well')
+  );
+
+  assert(!!mothEntity, 'Prose-introduced "silver moth" is autonomously discovered as a codex entity without pre-populated registry');
+  assert(mothEntity?.candidate_types.includes('creature') || mothEntity?.entity_type === 'creature', 'Discovered moth is classified with creature candidate type');
+  assert(mothEntity?.mention_count === 2, `Discovered moth mention count tracks across beats (expected 2, got ${mothEntity?.mention_count})`);
+  assert(mothEntity?.first_seen === 'Beat 1 (T1)', `Discovered moth first seen is Beat 1 (got ${mothEntity?.first_seen})`);
+
+  assert(!!wellEntity, 'Prose-introduced "stone well" is autonomously discovered as a codex entity without pre-populated registry');
+  assert(wellEntity?.candidate_types.includes('structure'), 'Discovered well candidate types include structure');
+  assert(wellEntity?.mention_count === 2, `Discovered well mention count is 2 (got ${wellEntity?.mention_count})`);
+  assert(wellEntity?.current_holder_id === null, 'Discovered well is not held by traveler');
+
+  // -------------------------------------------------------------
+  // TEST 11: Progressive Identity Evidence & Autonomous Alias Merging with Existing Actor
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 11: Progressive Identity Evidence & Autonomous Alias Merging ---');
+
+  const identityMergeProject: StoryProject = {
+    id: 'proj_identity_merge',
+    title: 'The Cloaked Companion',
+    description: 'A story of unmasking and revealed identities.',
+    activePovActorId: 'actor_traveler',
+    currentPosition: {
+      act: 'Act I',
+      chapter: 'Chapter 1',
+      scene: 'Scene 1',
+      beat: 2,
+      location_id: 'loc_courtyard',
+      location_label: 'Ruined Courtyard',
+    },
+    actors: [
+      {
+        id: 'actor_traveler',
+        identity: {
+          name: 'The Traveler',
+          working_label: 'traveler',
+          aliases: [],
+        },
+        roles: { story: ['protagonist'], scene: ['active'] },
+        traits: {},
+        current_state: { fatigue: 0.1, fear: 0.1, certainty: 0.2, emotion: 'watchful' },
+        active_goals: ['Investigate'],
+        current_location_id: 'loc_courtyard',
+        possessions: [],
+        isPresent: true,
+        is_author_locked: false,
+      },
+      {
+        id: 'actor_mara',
+        identity: {
+          name: 'Mara',
+          working_label: 'Mara',
+          aliases: [], // NO alias pre-attached
+        },
+        roles: { story: ['companion'], scene: ['active'] },
+        traits: {},
+        current_state: { fatigue: 0.0, fear: 0.0, certainty: 0.8, emotion: 'determined' },
+        active_goals: ['Make contact'],
+        current_location_id: 'loc_courtyard',
+        possessions: [],
+        isPresent: true,
+        is_author_locked: false,
+      },
+    ],
+    objects: [],
+    locations: [],
+    factions: [],
+    codexEntities: [],
+    facts: [],
+    threads: [],
+    reveals: [],
+    mentions: [],
+    knowledge: {
+      world_truth: [],
+      reader_knowledge: [],
+      actor_knowledge: {},
+    },
+    temporalHistory: [],
+    manuscript: [
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'A hooded woman stepped out from behind the crumbling archway and watched the traveler in silence.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_courtyard',
+        acceptedAt: 1725000000000,
+      },
+      {
+        id: 'beat_02',
+        beatNumber: 2,
+        text: 'The hooded woman pulled back her cloak. "My name is Mara," said the hooded woman.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_courtyard',
+        acceptedAt: 1725000001000,
+      },
+    ],
+  };
+
+  // Beat 1: Hooded woman exists as provisional entity
+  const synthesizedIdBeat1 = synthesizeCodex({
+    ...identityMergeProject,
+    manuscript: [identityMergeProject.manuscript[0]],
+  });
+  const provisionalHooded = synthesizedIdBeat1.find(
+    (e) => e.working_label.toLowerCase().includes('hooded')
+  );
+  assert(!!provisionalHooded, 'Beat 1: Hooded woman enters memory as a provisional discovered entity');
+  assert(provisionalHooded?.classification_confidence === 'provisional', 'Beat 1: Hooded woman begins with provisional classification confidence');
+
+  // Beat 2: Identity disclosure occurs -> Autonomous merge into actor_mara
+  const synthesizedIdBeat2 = synthesizeCodex(identityMergeProject);
+  
+  const resolvedMara = synthesizedIdBeat2.find((e) => e.id === 'actor_mara');
+  assert(!!resolvedMara, 'Resolved Mara entity exists in synthesized codex');
+  assert(
+    resolvedMara?.aliases.some((a) => a.toLowerCase().includes('hooded woman')),
+    `Mara's aliases autonomously absorbed "hooded woman". Actual aliases: [${resolvedMara?.aliases.join(', ')}]`
+  );
+  assert(
+    resolvedMara?.classification_confidence === 'resolved',
+    'Mara classification confidence is marked resolved'
+  );
+  
+  const idResolutionClaim = resolvedMara?.claims.find(
+    (c) => c.claim.includes('Identified as Mara') || c.claim.includes('formerly recognized as')
+  );
+  assert(!!idResolutionClaim, 'Identity resolution claim recorded with evidence snippet and confidence');
+  
+  // Provisional duplicate is cleanly removed
+  const leftoverProvisional = synthesizedIdBeat2.find(
+    (e) => e.id !== 'actor_mara' && e.working_label.toLowerCase() === 'hooded woman'
+  );
+  assert(!leftoverProvisional, 'Provisional entity is merged and does not persist as a duplicate dangling entity');
+
+  // -------------------------------------------------------------
+  // TEST 12: Open-World Identity Discovery & In-Place Resolution (No Prior Actor)
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 12: Open-World Identity Discovery & In-Place Canonical Resolution ---');
+
+  const openWorldIdentityProject: StoryProject = {
+    ...identityMergeProject,
+    actors: [identityMergeProject.actors[0]], // ONLY traveler, NO Mara in actor list
+    manuscript: [
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'A masked stranger blocked the doorway.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_courtyard',
+        acceptedAt: 1725000000000,
+      },
+      {
+        id: 'beat_02',
+        beatNumber: 2,
+        text: 'The masked stranger, Locke, lowered his blade with a weary sigh.',
+        povActorId: 'actor_traveler',
+        locationId: 'loc_courtyard',
+        acceptedAt: 1725000001000,
+      },
+    ],
+  };
+
+  const synthesizedOpenWorld = synthesizeCodex(openWorldIdentityProject);
+  const resolvedLocke = synthesizedOpenWorld.find(
+    (e) => e.working_label === 'Locke' || e.canonical_label === 'Locke'
+  );
+
+  assert(!!resolvedLocke, 'Provisional stranger in open-world prose autonomously resolves canonical label to "Locke"');
+  assert(
+    resolvedLocke?.aliases.some((a) => a.toLowerCase().includes('masked stranger')),
+    `Resolved Locke entity retains "masked stranger" as an alias. Actual: [${resolvedLocke?.aliases.join(', ')}]`
+  );
+  assert(resolvedLocke?.classification_confidence === 'resolved', 'Locke classification is resolved');
+  assert(resolvedLocke?.entity_type === 'actor', 'Locke entity type is resolved to actor');
+
   console.log('\n🎉 ALL PROGRESSIVE NARRATIVE MEMORY & CODEX TESTS PASSED!\n');
 }
 
 // Run tests if executed directly
 if (process.argv[1]?.endsWith('codexProgressiveMemory.test.ts')) {
-  runCodexTests();
+  await runCodexTests();
 }
