@@ -195,11 +195,21 @@ export const CodexView: React.FC<CodexViewProps> = ({ project, onUpdateEntity })
                           </span>
                         )}
                       </div>
-                      <h3 className="text-lg font-bold text-[#1A1A1A] font-serif italic mt-2">
+                      <h3 className="text-lg font-bold text-[#1A1A1A] font-serif italic mt-2 flex items-center gap-2">
                         {ent.canonical_label || ent.working_label}
+                        {ent.instance_index && ent.instance_index > 1 && (
+                          <span className="text-[11px] font-mono font-normal text-[#8C827A] not-italic bg-[#E5E2D9] px-1.5 py-0.5 rounded">
+                            #{ent.instance_index}
+                          </span>
+                        )}
                       </h3>
+                      {ent.disambiguation_hint && (
+                        <p className="text-[11px] text-[#736B63] font-mono mt-0.5 flex items-center gap-1">
+                          <span>📍 {ent.disambiguation_hint}</span>
+                        </p>
+                      )}
                       {ent.canonical_label && ent.working_label !== ent.canonical_label && (
-                        <p className="text-[11px] text-[#736B63] font-serif italic">
+                        <p className="text-[11px] text-[#736B63] font-serif italic mt-0.5">
                           Observed as: "{ent.working_label}"
                         </p>
                       )}
@@ -321,9 +331,16 @@ export const CodexView: React.FC<CodexViewProps> = ({ project, onUpdateEntity })
                               </span>
                             )}
                           </div>
-                          <span className="text-[9px] font-mono font-bold bg-[#E5E2D9] px-1.5 py-0.5 rounded text-[#1A1A1A] whitespace-nowrap">
-                            Beat {claim.evidence_beats.join(', ')}
-                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {claim.confidence !== undefined && (
+                              <span className="text-[9px] font-mono font-medium text-[#736B63] bg-[#EFECE6] px-1.5 py-0.5 rounded">
+                                {Math.round(claim.confidence * 100)}% conf
+                              </span>
+                            )}
+                            <span className="text-[9px] font-mono font-bold bg-[#E5E2D9] px-1.5 py-0.5 rounded text-[#1A1A1A] whitespace-nowrap">
+                              Beat {claim.evidence_beats.join(', ')}
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>

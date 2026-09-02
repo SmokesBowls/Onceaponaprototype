@@ -3,6 +3,7 @@ import {
   classifyEntityTypes,
   detectEntityInteractions,
   extractClaimsFromProse,
+  extractNovelEntityCandidates,
   mergeClaims,
   synthesizeCodex,
 } from '../src/lib/codexEngine';
@@ -680,7 +681,11 @@ export async function runCodexTests() {
   const idResolutionClaim = resolvedMara?.claims.find(
     (c) => c.claim.includes('Identified as Mara') || c.claim.includes('formerly recognized as')
   );
-  assert(!!idResolutionClaim, 'Identity resolution claim recorded with evidence snippet and confidence');
+  assert(!!idResolutionClaim, 'Identity resolution claim recorded with evidence snippet');
+  assert(
+    idResolutionClaim?.confidence !== undefined && idResolutionClaim.confidence >= 0.9,
+    `Identity resolution claim persists numeric confidence value (Expected >= 0.9, Actual: ${idResolutionClaim?.confidence})`
+  );
   
   // Provisional duplicate is cleanly removed
   const leftoverProvisional = synthesizedIdBeat2.find(
@@ -728,6 +733,338 @@ export async function runCodexTests() {
   );
   assert(resolvedLocke?.classification_confidence === 'resolved', 'Locke classification is resolved');
   assert(resolvedLocke?.entity_type === 'actor', 'Locke entity type is resolved to actor');
+  const lockeIdClaim = resolvedLocke?.claims.find((c) => c.claim.includes('Identified as Locke'));
+  assert(!!lockeIdClaim, 'Locke has in-place identity claim');
+  assert(
+    lockeIdClaim?.confidence !== undefined && lockeIdClaim.confidence >= 0.9,
+    `Locke in-place identity claim persists confidence value (Actual: ${lockeIdClaim?.confidence})`
+  );
+
+  // -------------------------------------------------------------
+  // TEST 13: Universal Open-World Lexicon-Free Entity Extraction
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 13: Universal Open-World Lexicon-Free Entity Extraction ---');
+
+  const lexiconFreeProse = `
+    A turquoise thaumatrope rested on the dais.
+    Nearby, a luminous xenolith hummed with cold light.
+    A six-legged myrmidon scuttled across the flagstones.
+    Master Vane watched the sky from the terrace.
+  `;
+
+  const extractedOpenWorld = extractNovelEntityCandidates(lexiconFreeProse, new Set(['dais', 'terrace', 'flagstones', 'sky']));
+  
+  const thaumatrope = extractedOpenWorld.find((c) => c.workingLabel.includes('thaumatrope'));
+  assert(!!thaumatrope, 'Discovers unlisted noun "turquoise thaumatrope" without core lexicon entry');
+  assert(thaumatrope?.candidateTypes.includes('object'), 'Classifies thaumatrope as object candidate');
+
+  const xenolith = extractedOpenWorld.find((c) => c.workingLabel.includes('xenolith'));
+  assert(!!xenolith, 'Discovers unlisted noun "luminous xenolith" without core lexicon entry');
+
+  const myrmidon = extractedOpenWorld.find((c) => c.workingLabel.includes('myrmidon'));
+  assert(!!myrmidon, 'Discovers unlisted animate noun "six-legged myrmidon" without core lexicon entry');
+  assert(myrmidon?.candidateTypes.includes('creature'), 'Classifies scuttling myrmidon with creature candidate type');
+
+  const masterVane = extractedOpenWorld.find((c) => c.workingLabel === 'Master Vane');
+  assert(!!masterVane, 'Discovers capitalized proper entity "Master Vane"');
+  assert(masterVane?.candidateTypes.includes('actor'), 'Classifies Master Vane with actor candidate type');
+
+  // -------------------------------------------------------------
+  // TEST 14: Pronoun Coreference & Possession Attribution Safety
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 14: Pronoun Coreference & Possession Attribution Safety ---');
+
+  // Scenario A: Backward coreference ("Mara stepped forward. She picked up the brass device." in Tran's POV)
+  const corefProjectMara: StoryProject = {
+    ...crossroadsProject,
+    actors: [
+      {
+        id: 'actor_tran',
+        identity: { name: 'Tran', working_label: 'Tran', aliases: [] },
+        roles: { story: ['protagonist'], scene: ['observer'] },
+        traits: {},
+        current_state: { fatigue: 0, fear: 0, certainty: 0, emotion: 'neutral' },
+        active_goals: [],
+        current_location_id: 'loc_crossroads',
+        possessions: [],
+        isPresent: true,
+      },
+      {
+        id: 'actor_mara',
+        identity: { name: 'Mara', working_label: 'Mara', aliases: [] },
+        roles: { story: ['ally'], scene: ['actor'] },
+        traits: {},
+        current_state: { fatigue: 0, fear: 0, certainty: 0, emotion: 'neutral' },
+        active_goals: [],
+        current_location_id: 'loc_crossroads',
+        possessions: [],
+        isPresent: true,
+      },
+    ],
+    manuscript: [
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'Mara stepped forward into the glow. She picked up the brass device and smiled.',
+        povActorId: 'actor_tran',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000000000,
+      },
+    ],
+  };
+
+  const synthesizedMaraCoref = synthesizeCodex(corefProjectMara);
+  const deviceMaraCoref = synthesizedMaraCoref.find((e) => e.working_label.toLowerCase().includes('device'));
+  assert(!!deviceMaraCoref, 'Brass device exists in synthesized codex for coreference test');
+  assert(
+    deviceMaraCoref?.current_holder_id === 'actor_mara',
+    `Pronoun "She" correctly resolves backward to Mara (actor_mara), NOT Tran (actor_tran). Actual: ${deviceMaraCoref?.current_holder_id}`
+  );
+
+  // Scenario B: Unresolved 3rd-person pronoun ("She picked up the brass device." in Tran's POV, NO female actor)
+  const corefProjectUnresolvedShe: StoryProject = {
+    ...crossroadsProject,
+    actors: [
+      {
+        id: 'actor_tran',
+        identity: { name: 'Tran', working_label: 'Tran', aliases: [] },
+        roles: { story: ['protagonist'], scene: ['observer'] },
+        traits: {},
+        current_state: { fatigue: 0, fear: 0, certainty: 0, emotion: 'neutral' },
+        active_goals: [],
+        current_location_id: 'loc_crossroads',
+        possessions: [],
+        isPresent: true,
+      },
+    ],
+    manuscript: [
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'She picked up the brass device and vanished into the fog.',
+        povActorId: 'actor_tran',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000000000,
+      },
+    ],
+  };
+
+  const synthesizedUnresolved = synthesizeCodex(corefProjectUnresolvedShe);
+  const deviceUnresolved = synthesizedUnresolved.find((e) => e.working_label.toLowerCase().includes('device'));
+  assert(!!deviceUnresolved, 'Brass device exists in synthesized codex for unresolved pronoun test');
+  assert(
+    deviceUnresolved?.current_holder_id !== 'actor_tran',
+    `Unresolved "She" does NOT falsely assign device to POV actor Tran. Actual: ${deviceUnresolved?.current_holder_id}`
+  );
+
+  // Scenario C: Explicit 1st-person ("I picked up the brass device." in Tran's POV)
+  const firstPersonProject: StoryProject = {
+    ...crossroadsProject,
+    actors: [
+      {
+        id: 'actor_tran',
+        identity: { name: 'Tran', working_label: 'Tran', aliases: [] },
+        roles: { story: ['protagonist'], scene: ['observer'] },
+        traits: {},
+        current_state: { fatigue: 0, fear: 0, certainty: 0, emotion: 'neutral' },
+        active_goals: [],
+        current_location_id: 'loc_crossroads',
+        possessions: [],
+        isPresent: true,
+      },
+    ],
+    manuscript: [
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'I reached down and picked up the brass device.',
+        povActorId: 'actor_tran',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000000000,
+      },
+    ],
+  };
+
+  const synthesizedFirstPerson = synthesizeCodex(firstPersonProject);
+  const deviceFirstPerson = synthesizedFirstPerson.find((e) => e.working_label.toLowerCase().includes('device'));
+  assert(
+    deviceFirstPerson?.current_holder_id === 'actor_tran',
+    `Explicit 1st-person pickup correctly assigns device to POV actor Tran. Actual: ${deviceFirstPerson?.current_holder_id}`
+  );
+
+  // -------------------------------------------------------------
+  // TEST 15: Occurrence & Identity Disambiguation Across Narrative
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 15: Occurrence & Identity Disambiguation Across Narrative ---');
+
+  const disambiguationProject: StoryProject = {
+    id: 'proj_disambiguation_test',
+    title: 'The Multi-Instance Disambiguation Novel',
+    description: 'Testing multiple guards and distinct hooded women instances',
+    currentPosition: {
+      act: 'Act I',
+      chapter: 'Chapter 1',
+      scene: 'Scene 1',
+      beat: 1,
+      location_id: 'loc_crossroads',
+      location_label: 'The Crossroads',
+    },
+    activePovActorId: 'actor_tran',
+    actors: [
+      {
+        id: 'actor_tran',
+        identity: { name: 'Tran', working_label: 'Tran', aliases: [] },
+        roles: { story: ['protagonist'], scene: ['observer'] },
+        traits: {},
+        current_state: { fatigue: 0, fear: 0, certainty: 0, emotion: 'neutral' },
+        active_goals: [],
+        current_location_id: 'loc_crossroads',
+        possessions: [],
+        isPresent: true,
+      },
+      {
+        id: 'actor_mara',
+        identity: { name: 'Mara', working_label: 'Mara', aliases: [] },
+        roles: { story: ['ally'], scene: ['actor'] },
+        traits: {},
+        current_state: { fatigue: 0, fear: 0, certainty: 0, emotion: 'neutral' },
+        active_goals: [],
+        current_location_id: 'loc_crossroads',
+        possessions: [],
+        isPresent: true,
+      },
+    ],
+    locations: [
+      {
+        id: 'loc_crossroads',
+        identity: { name: 'The Crossroads', working_label: 'Crossroads', aliases: [] },
+        parent_location_id: null,
+        connected_locations: [],
+        description_summary: 'A quiet crossing',
+      },
+      {
+        id: 'loc_river',
+        identity: { name: 'The River Ferry', working_label: 'River Ferry', aliases: [] },
+        parent_location_id: null,
+        connected_locations: [],
+        description_summary: 'A rushing river crossing',
+      },
+      {
+        id: 'loc_dungeon',
+        identity: { name: 'The Iron Dungeon', working_label: 'Iron Dungeon', aliases: [] },
+        parent_location_id: null,
+        connected_locations: [],
+        description_summary: 'Dark subterranean cells',
+      },
+    ],
+    objects: [],
+    factions: [],
+    facts: [],
+    threads: [],
+    reveals: [],
+    mentions: [],
+    knowledge: {
+      world_truth: [],
+      reader_knowledge: [],
+      actor_knowledge: {},
+    },
+    temporalHistory: [],
+    manuscript: [
+      // Beat 1: First guard at crossroads
+      {
+        id: 'beat_01',
+        beatNumber: 1,
+        text: 'Tran arrived at the road. A guard stood by the ancient milestone, holding a spear.',
+        povActorId: 'actor_tran',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000000000,
+      },
+      // Beat 2: Continuity with the same guard at crossroads
+      {
+        id: 'beat_02',
+        beatNumber: 2,
+        text: 'The guard nodded curtly and checked the wagon papers.',
+        povActorId: 'actor_tran',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000100000,
+      },
+      // Beat 3: A hooded woman at crossroads reveals she is Mara
+      {
+        id: 'beat_03',
+        beatNumber: 3,
+        text: 'A hooded woman stepped out of the shadows. "My name is Mara," said the hooded woman with a soft smile.',
+        povActorId: 'actor_tran',
+        locationId: 'loc_crossroads',
+        acceptedAt: 1725000200000,
+      },
+      // Beat 4: Distinct guards at a different location (River Ferry)
+      {
+        id: 'beat_04',
+        beatNumber: 4,
+        text: 'Down at the ferry, a guard inspected the boat ropes. Another guard watched the dark water from the dock.',
+        povActorId: 'actor_tran',
+        locationId: 'loc_river',
+        acceptedAt: 1725000300000,
+      },
+      // Beat 5: A distinct, separate hooded woman at a completely different location (Dungeon)
+      {
+        id: 'beat_05',
+        beatNumber: 5,
+        text: 'Deep in the iron dungeon, a hooded woman whispered through the cell bars into the darkness.',
+        povActorId: 'actor_tran',
+        locationId: 'loc_dungeon',
+        acceptedAt: 1725000400000,
+      },
+    ],
+  };
+
+  const synthesizedDisambiguation = synthesizeCodex(disambiguationProject);
+
+  // 1. Verify guard instances
+  const guardEntities = synthesizedDisambiguation.filter((e) => e.working_label.toLowerCase() === 'guard');
+  assert(guardEntities.length === 3, `Discovers 3 distinct guard instances across scenes/occurrences (Actual: ${guardEntities.length})`);
+
+  const guard1 = guardEntities.find((e) => e.id === 'ent_guard');
+  const guard2 = guardEntities.find((e) => e.id === 'ent_guard_2');
+  const guard3 = guardEntities.find((e) => e.id === 'ent_guard_3');
+
+  assert(!!guard1, 'Guard 1 (ent_guard) exists');
+  assert(!!guard2, 'Guard 2 (ent_guard_2) exists');
+  assert(!!guard3, 'Guard 3 (ent_guard_3) exists');
+
+  assert(guard1?.scope_location_id === 'loc_crossroads', 'Guard 1 scoped to Crossroads');
+  assert(guard1?.instance_index === 1, 'Guard 1 has instance_index 1');
+  assert(guard1?.mention_count === 2, `Guard 1 has 2 mentions via continuity (Actual: ${guard1?.mention_count})`);
+
+  assert(guard2?.scope_location_id === 'loc_river', 'Guard 2 scoped to River Ferry');
+  assert(guard2?.instance_index === 2, 'Guard 2 has instance_index 2');
+
+  assert(guard3?.scope_location_id === 'loc_river', 'Guard 3 scoped to River Ferry ("another guard")');
+  assert(guard3?.instance_index === 3, 'Guard 3 has instance_index 3');
+
+  // 2. Verify hooded woman disambiguation and merge isolation
+  const maraEntity = synthesizedDisambiguation.find((e) => e.id === 'actor_mara' || e.canonical_label === 'Mara');
+  assert(!!maraEntity, 'Mara entity exists in codex');
+  assert(
+    maraEntity?.aliases.some((a) => a.toLowerCase().includes('hooded woman')),
+    'Mara contains "hooded woman" alias from Beat 3 identity disclosure at Crossroads'
+  );
+
+  // The second hooded woman in Beat 5 at the dungeon MUST NOT collapse into Mara!
+  const dungeonHoodedWoman = synthesizedDisambiguation.find((e) => e.id === 'ent_hooded_woman_2');
+  assert(!!dungeonHoodedWoman, 'Second hooded woman at Iron Dungeon (ent_hooded_woman_2) exists as a distinct entity');
+  assert(
+    dungeonHoodedWoman?.scope_location_id === 'loc_dungeon',
+    'Second hooded woman is correctly scoped to Iron Dungeon'
+  );
+  assert(
+    dungeonHoodedWoman?.canonical_label !== 'Mara',
+    'Second hooded woman is NOT falsely collapsed into Mara'
+  );
+  assert(
+    dungeonHoodedWoman?.classification_confidence === 'provisional',
+    'Second hooded woman remains provisional'
+  );
 
   console.log('\n🎉 ALL PROGRESSIVE NARRATIVE MEMORY & CODEX TESTS PASSED!\n');
 }

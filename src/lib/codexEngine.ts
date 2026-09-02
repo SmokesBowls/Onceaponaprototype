@@ -11,7 +11,7 @@ import {
 export { calculateReliability };
 
 /**
- * Deterministic provisional type classification based on lexical indicators
+ * Deterministic provisional type classification based on lexical and syntactic indicators
  */
 export function classifyEntityTypes(
   label: string,
@@ -24,11 +24,11 @@ export function classifyEntityTypes(
   const l = label.toLowerCase();
   const fullText = (l + ' ' + contextSnippets.join(' ')).toLowerCase();
 
-  // Structure / Landmark vs Object
-  const isWellOrBuilding = /\b(well|tower|gate|arch|bridge|temple|shrine|ruin|vault|altar|crossroads|monument|statue|pillar|obelisk)\b/i.test(l);
-  const isStructureSpatial = /\b(stood|anchored|built|deep|shaft|masonry|chamber|threshold|overgrowth|beside the road|high above|fixed|unmovable)\b/i.test(fullText);
+  // Structure / Landmark / Architecture
+  const isStructureIndicator = /\b(well|tower|gate|arch|archway|bridge|temple|shrine|ruin|ruins|vault|altar|crossroads|monument|statue|pillar|obelisk|monolith|chamber|spire|citadel|fortress|crypt|dais|pedestal|brazier|hearth|fountain|wall|sarcophagus|tomb)\b/i.test(l);
+  const isStructureSpatial = /\b(stood|anchored|built|deep|shaft|masonry|chamber|threshold|overgrowth|beside the road|high above|fixed|unmovable|towered|loomed|rose from|situated)\b/i.test(fullText);
 
-  if (isWellOrBuilding) {
+  if (isStructureIndicator) {
     if (isStructureSpatial && contextSnippets.length >= 2) {
       return {
         primaryType: 'structure',
@@ -43,8 +43,11 @@ export function classifyEntityTypes(
     };
   }
 
-  // Creature / Monster / Animal
-  if (/\b(moth|butterfly|raven|crow|hawk|falcon|owl|eagle|wolf|hound|dog|cat|rat|mouse|snake|serpent|viper|spider|beetle|dragonfly|stag|deer|horse|stallion|steed|gargoyle|creature|beast|dragon|wyrm|monster)\b/i.test(l)) {
+  // Creature / Animate Beast / Fauna
+  const isCreatureIndicator = /\b(moth|butterfly|raven|crow|hawk|falcon|owl|eagle|wolf|hound|dog|cat|rat|mouse|snake|serpent|viper|spider|beetle|dragonfly|stag|deer|horse|stallion|steed|gargoyle|creature|beast|dragon|wyrm|monster|scarab|pangolin|myrmidon|gryphon|basilisk|leviathan|quadruped|avifauna|chimera)\b/i.test(l);
+  const isAnimateBehavior = /\b(fluttered|flew|scuttled|slithered|crawled|perched|growled|snarled|breathed|blinked|screeched|winged|nested|furred|scaled)\b/i.test(fullText);
+
+  if (isCreatureIndicator || isAnimateBehavior) {
     return {
       primaryType: 'creature',
       candidateTypes: ['creature', 'actor'],
@@ -53,7 +56,7 @@ export function classifyEntityTypes(
   }
 
   // Location / Place
-  if (/\b(forest|valley|mount|mountain|harbor|dock|street|conduit|hall|dungeon|cavern|crossroads|city|room|chamber|courtyard|garden)\b/i.test(l)) {
+  if (/\b(forest|valley|mount|mountain|harbor|dock|street|conduit|hall|dungeon|cavern|crossroads|city|room|chamber|courtyard|garden|pass|basin|canyon|glade|plateau)\b/i.test(l)) {
     return {
       primaryType: 'location',
       candidateTypes: ['location', 'landmark'],
@@ -61,8 +64,11 @@ export function classifyEntityTypes(
     };
   }
 
-  // Actor / Character
-  if (/\b(traveler|stranger|man|woman|scribe|master|locke|mara|guard|curator|child|figure|hooded|investigator|locksmith|scholar|king|lord|wanderer|pilgrim|sentry|peddler|blacksmith|monk|priest|assassin|rogue)\b/i.test(l)) {
+  // Actor / Character / Person
+  const isActorIndicator = /\b(traveler|stranger|man|woman|scribe|master|locke|mara|guard|curator|child|girl|boy|lady|lord|knight|figure|hooded|cloaked|masked|investigator|locksmith|scholar|king|queen|prince|princess|wanderer|pilgrim|sentry|peddler|blacksmith|monk|priest|priestess|assassin|rogue|archivist|hermit|sage|captive|elder|sorcerer|sorceress|alchemist)\b/i.test(l);
+  const isPersonAction = /\b(said|spoke|whispered|told|smiled|nodded|glanced|laughed|replied|stepped forward|drew a breath|gazed)\b/i.test(fullText);
+
+  if (isActorIndicator || isPersonAction) {
     return {
       primaryType: 'actor',
       candidateTypes: ['actor'],
@@ -70,24 +76,31 @@ export function classifyEntityTypes(
     };
   }
 
-  // Object / Relic / Mechanism / Curiosity
-  if (/\b(device|astrolabe|key|lantern|pick|sword|blade|dagger|scroll|book|ledger|journal|gem|crystal|box|chest|cylinder|mechanism|escapement|pry-bar|pouch|vial|flask|chalice|coin|amulet|ring|locket|pendant|bell|clock|mirror|compass|prism|lens|automaton|artifact|relic|idol|tapestry|parchment|map|seal|talisman|staff|wand|shield|helmet|armor|cloak|goblet)\b/i.test(l)) {
+  // Object / Relic / Instrument / Weapon / Mechanism / Curiosity
+  const isObjectIndicator = /\b(device|astrolabe|key|lantern|pick|sword|blade|dagger|scroll|book|ledger|journal|gem|crystal|box|chest|cylinder|mechanism|escapement|pry-bar|pouch|vial|flask|chalice|coin|amulet|ring|locket|pendant|bell|clock|mirror|compass|prism|lens|automaton|artifact|relic|idol|tapestry|parchment|map|seal|talisman|staff|wand|shield|helmet|armor|cloak|goblet|thaumatrope|chronometer|xenolith|resonator|phylactery|gyroscope|aerostat|armature|crucible|sextant|hourglass|figurine)\b/i.test(l);
+  const isObjectAction = /\b(picked up|held|grasped|carried|pocketed|examined|glowed|hummed|clasped|rested upon|activated|opened|wielded|drawn|dropped)\b/i.test(fullText);
+
+  if (isObjectIndicator || isObjectAction) {
     return {
       primaryType: 'object',
-      candidateTypes: ['object', 'relic', 'mechanism'],
+      candidateTypes: ['object', 'artifact', 'mechanism'],
       classificationConfidence: contextSnippets.length >= 2 ? 'resolved' : 'provisional',
     };
   }
 
   return {
     primaryType: 'provisional',
-    candidateTypes: ['concept', 'object', 'landmark', 'phenomenon'],
+    candidateTypes: ['object', 'phenomenon', 'concept'],
     classificationConfidence: 'provisional',
   };
 }
 
 export interface DiscoveredCandidate {
   workingLabel: string;
+  headNoun?: string;
+  determiner: string;
+  isProper: boolean;
+  isExplicitNewInstance: boolean;
   primaryType: string;
   candidateTypes: string[];
   classificationConfidence: 'provisional' | 'resolved';
@@ -103,48 +116,57 @@ export interface IdentityResolutionEvidence {
   triggerType: 'dialogue_disclosure' | 'apposition' | 'unmasking_action' | 'predicate_reveal';
 }
 
-const CORE_NOUNS = [
-  'moth', 'butterfly', 'raven', 'crow', 'hawk', 'falcon', 'owl', 'eagle',
-  'wolf', 'hound', 'dog', 'cat', 'rat', 'mouse', 'snake', 'serpent', 'viper',
-  'spider', 'beetle', 'dragonfly', 'stag', 'deer', 'horse', 'steed', 'beast',
-  'dragon', 'wyrm', 'gargoyle', 'creature', 'monster',
-  'device', 'astrolabe', 'key', 'lantern', 'pick', 'sword', 'blade', 'dagger',
-  'scroll', 'book', 'ledger', 'gem', 'crystal', 'box', 'chest', 'cylinder',
-  'mechanism', 'escapement', 'pry-bar', 'pouch', 'journal', 'vial', 'flask',
-  'chalice', 'coin', 'amulet', 'ring', 'locket', 'pendant', 'bell', 'clock',
-  'mirror', 'compass', 'prism', 'lens', 'automaton', 'artifact', 'relic',
-  'idol', 'tapestry', 'parchment', 'map', 'seal', 'talisman', 'staff', 'wand',
-  'shield', 'helmet', 'armor', 'cloak', 'goblet',
-  'well', 'tower', 'gate', 'arch', 'archway', 'bridge', 'temple', 'shrine',
-  'ruin', 'vault', 'altar', 'crossroads', 'monument', 'statue', 'pillar',
-  'obelisk', 'pedestal', 'brazier', 'hearth', 'fountain', 'dais', 'crypt',
-  'tomb', 'spire', 'citadel',
-  'stranger', 'wanderer', 'pilgrim', 'sentry', 'peddler', 'blacksmith',
-  'scholar', 'scribe', 'monk', 'priest', 'assassin', 'rogue', 'locksmith',
-  'curator', 'investigator', 'innkeeper', 'merchant', 'woman', 'man',
-  'figure', 'lady', 'lord', 'knight', 'guard', 'child', 'girl', 'boy',
-  'traveler', 'seeker', 'sage', 'hermit', 'captive', 'elder'
-];
-
-const MODIFIERS = [
-  'silver', 'gold', 'golden', 'brass', 'copper', 'bronze', 'iron', 'steel',
-  'metal', 'metallic', 'stone', 'wooden', 'wood', 'leather', 'glass',
-  'crystal', 'obsidian', 'marble', 'granite', 'ceramic', 'bone', 'clay',
-  'ancient', 'weathered', 'rusted', 'ruined', 'pristine', 'ornate', 'carved',
-  'engraved', 'tarnished', 'polished', 'cracked', 'mossy', 'overgrown',
-  'forgotten', 'dormant', 'clockwork', 'mechanical', 'strange', 'mysterious',
-  'glowing', 'dark', 'pale', 'shadowed', 'hooded', 'cloaked', 'masked',
-  'armored', 'black', 'white', 'red', 'crimson', 'scarlet', 'blue', 'azure',
-  'green', 'emerald', 'amber', 'yellow', 'purple', 'violet', 'grey', 'gray',
-  'small', 'large', 'tiny', 'huge', 'heavy', 'slender', 'tall', 'deep', 'old', 'new'
-];
-
-const CORE_NOUNS_PATTERN = CORE_NOUNS.join('|');
-const MODIFIERS_PATTERN = MODIFIERS.join('|');
+const NON_ENTITY_STOPWORDS = new Set([
+  // Pronouns
+  'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves',
+  'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself',
+  'i', 'me', 'my', 'mine', 'myself', 'we', 'us', 'our', 'ours', 'ourselves',
+  'you', 'your', 'yours', 'yourself', 'yourselves',
+  'who', 'whom', 'whose', 'which', 'what', 'whatever', 'whoever',
+  'this', 'that', 'these', 'those', 'there', 'here',
+  // Quantifiers / Determiners / Conjunctions
+  'some', 'any', 'all', 'both', 'each', 'every', 'few', 'many', 'several',
+  'other', 'another', 'same', 'such', 'more', 'most', 'less', 'least',
+  'one', 'two', 'three', 'four', 'five', 'first', 'second', 'third', 'last', 'next',
+  'and', 'or', 'but', 'nor', 'yet', 'so', 'because', 'although', 'while', 'as',
+  // Prepositions
+  'on', 'in', 'at', 'into', 'onto', 'from', 'with', 'by', 'under', 'over',
+  'through', 'across', 'beside', 'near', 'behind', 'before', 'after', 'between',
+  'against', 'upon', 'towards', 'toward', 'to', 'for', 'of', 'about', 'around',
+  // Common Narrative Verbs (Actions / Auxiliaries / Modals)
+  'is', 'was', 'are', 'were', 'have', 'has', 'had', 'do', 'did', 'done',
+  'say', 'said', 'go', 'went', 'gone', 'come', 'came', 'see', 'saw', 'seen',
+  'take', 'took', 'taken', 'get', 'got', 'make', 'made', 'know', 'knew',
+  'think', 'thought', 'look', 'looked', 'want', 'give', 'gave', 'use', 'used',
+  'find', 'found', 'tell', 'told', 'ask', 'asked', 'work', 'seem', 'seemed',
+  'feel', 'felt', 'try', 'tried', 'leave', 'left', 'call', 'called',
+  'landed', 'stood', 'fluttered', 'circled', 'rose', 'lay', 'sat', 'scuttled',
+  'flew', 'hummed', 'crept', 'shone', 'fell', 'walked', 'stepped', 'watched',
+  'lowered', 'lifted', 'carried', 'reached', 'turned', 'glowed', 'moved',
+  'stopped', 'began', 'smiled', 'nodded', 'gasped', 'whispered', 'shouted',
+  'held', 'grasped', 'passed', 'appeared', 'disappeared', 'vanished', 'hovered',
+  'hung', 'crawled', 'slithered', 'opened', 'closed', 'struck', 'ran', 'fled', 'broke',
+  'blocked', 'raised', 'guarded', 'entered', 'exited', 'paused', 'sighed', 'laughed',
+  'cried', 'spoke', 'screamed', 'hissed', 'waited', 'leaned', 'drew', 'pulled', 'pushed',
+  'dropped', 'cast', 'hurled', 'thrust', 'scanned', 'spotted', 'noticed', 'caught', 'lost',
+  // Abstract / Temporal / Sensory Non-entities
+  'time', 'moment', 'second', 'minute', 'hour', 'day', 'night', 'morning', 'evening',
+  'instant', 'pause', 'turn', 'interval', 'glance', 'sight',
+  'way', 'side', 'direction', 'distance', 'middle', 'center', 'edge', 'top', 'bottom',
+  'front', 'back', 'inside', 'outside', 'depth', 'part', 'piece', 'half', 'rest',
+  'silence', 'air', 'darkness', 'light', 'shadow', 'shadows', 'sound', 'noise',
+  'voice', 'breath', 'step', 'steps', 'pace', 'thought', 'thoughts', 'feeling', 'sense',
+  'truth', 'doubt', 'fear', 'hope', 'manner', 'matter', 'thing', 'things',
+  'place', 'places', 'room', 'point', 'case', 'fact', 'end', 'start', 'beginning',
+  'reason', 'answer', 'question', 'idea', 'mind', 'heart', 'eye', 'eyes',
+  'hand', 'hands', 'face', 'head', 'feet', 'foot', 'finger', 'fingers', 'arm', 'arms',
+  'leg', 'legs', 'body', 'word', 'words', 'name', 'names',
+]);
 
 /**
  * Open-world novel entity candidate extractor from arbitrary narrative prose.
- * Discovers newly introduced salient objects, creatures, structures, and actors.
+ * Uses universal syntactic noun-phrase chunking and grammar heuristics to discover
+ * newly introduced objects, creatures, structures, and actors without being bounded by a fixed dictionary.
  */
 export function extractNovelEntityCandidates(
   prose: string,
@@ -154,57 +176,106 @@ export function extractNovelEntityCandidates(
   const foundLabels = new Set<string>();
 
   const sentences = prose.split(/(?<=[.!?])\s+/);
-
-  const modifiedNounRegex = new RegExp(
-    `\\b(?:a|an|the|this|that|one|two|three)\\s+((?:(?:${MODIFIERS_PATTERN})\\s+){1,2})(${CORE_NOUNS_PATTERN})\\b`,
-    'gi'
-  );
-
-  const bareNounRegex = new RegExp(
-    `\\b(?:a|an|the|this|that)\\s+(${CORE_NOUNS_PATTERN})\\b`,
-    'gi'
-  );
+  const determiners = new Set(['a', 'an', 'the', 'this', 'that', 'one', 'each', 'every', 'another', 'two', 'three']);
 
   for (const s of sentences) {
-    // 1. Check modified noun phrases (e.g. "silver moth", "stone well", "rusted iron key")
-    let match: RegExpExecArray | null;
-    modifiedNounRegex.lastIndex = 0;
-    while ((match = modifiedNounRegex.exec(s)) !== null) {
-      const mod = match[1].trim();
-      const noun = match[2].trim();
-      const rawLabel = `${mod} ${noun}`.toLowerCase();
+    const trimmedSent = s.trim();
+    if (!trimmedSent) continue;
 
-      if (!isKnownOrSublabel(rawLabel, knownLabels) && !foundLabels.has(rawLabel)) {
-        foundLabels.add(rawLabel);
-        const { primaryType, candidateTypes, classificationConfidence } = classifyEntityTypes(rawLabel, [s]);
-        candidates.push({
-          workingLabel: rawLabel,
-          primaryType,
-          candidateTypes,
-          classificationConfidence,
-          snippet: s.trim(),
-        });
+    // Tokenize sentence into alphanumeric words + hyphens, preserving raw word boundaries
+    const rawTokens = trimmedSent.split(/\s+/);
+
+    // 1. Syntactic Noun Phrase Parsing from determiners
+    for (let i = 0; i < rawTokens.length; i++) {
+      const cleanToken = rawTokens[i].replace(/^[^a-zA-Z0-9\-]+|[^a-zA-Z0-9\-]+$/g, '').toLowerCase();
+      if (determiners.has(cleanToken)) {
+        const npWords: string[] = [];
+        for (let j = i + 1; j < Math.min(rawTokens.length, i + 4); j++) {
+          const w = rawTokens[j].replace(/^[^a-zA-Z0-9\-]+|[^a-zA-Z0-9\-]+$/g, '');
+          const wLower = w.toLowerCase();
+
+          // If word is empty, punctuation-delimited, in stopword/verb/preposition list,
+          // or is a verb following an established noun phrase, NP terminates
+          if (
+            !w ||
+            NON_ENTITY_STOPWORDS.has(wLower) ||
+            determiners.has(wLower) ||
+            wLower.endsWith('ly') ||
+            (npWords.length >= 1 && (wLower.endsWith('ed') || wLower.endsWith('ing')))
+          ) {
+            break;
+          }
+
+          npWords.push(wLower);
+
+          // If token had trailing punctuation in raw text, NP boundary is reached
+          if (/[.,!?;:"]$/.test(rawTokens[j])) {
+            break;
+          }
+        }
+
+        if (npWords.length > 0) {
+          const rawLabel = npWords.join(' ');
+          const headNoun = npWords[npWords.length - 1];
+          const isExplicitNew = cleanToken === 'another' || cleanToken === 'one' || /^(second|third|different|new|another)$/i.test(npWords[0] || '');
+
+          // Validate candidate
+          if (
+            headNoun.length >= 3 &&
+            !NON_ENTITY_STOPWORDS.has(headNoun) &&
+            !/^\d+$/.test(headNoun) &&
+            !NON_ENTITY_STOPWORDS.has(rawLabel)
+          ) {
+            const isDefinite = cleanToken === 'the' || cleanToken === 'this' || cleanToken === 'that';
+            const isKnown = isKnownOrSublabel(rawLabel, knownLabels);
+            if (!isKnown || !isDefinite || isExplicitNew) {
+              const dedupeKey = `${cleanToken}_${rawLabel}`;
+              if (!foundLabels.has(dedupeKey)) {
+                foundLabels.add(dedupeKey);
+                const { primaryType, candidateTypes, classificationConfidence } = classifyEntityTypes(rawLabel, [trimmedSent]);
+                candidates.push({
+                  workingLabel: rawLabel,
+                  headNoun,
+                  determiner: cleanToken,
+                  isProper: false,
+                  isExplicitNewInstance: isExplicitNew,
+                  primaryType,
+                  candidateTypes,
+                  classificationConfidence,
+                  snippet: trimmedSent,
+                });
+              }
+            }
+          }
+        }
       }
     }
 
-    // 2. Check bare salient nouns (e.g. "a raven", "the well", "a stranger")
-    bareNounRegex.lastIndex = 0;
-    while ((match = bareNounRegex.exec(s)) !== null) {
-      const noun = match[1].trim().toLowerCase();
-      if (!isKnownOrSublabel(noun, knownLabels) && !foundLabels.has(noun)) {
-        // Also check if this noun was already matched as part of a modified noun in this sentence
-        const alreadyMatchedAsModifier = Array.from(foundLabels).some((fl) => fl.endsWith(noun));
-        if (!alreadyMatchedAsModifier) {
-          foundLabels.add(noun);
-          const { primaryType, candidateTypes, classificationConfidence } = classifyEntityTypes(noun, [s]);
-          candidates.push({
-            workingLabel: noun,
-            primaryType,
-            candidateTypes,
-            classificationConfidence,
-            snippet: s.trim(),
-          });
-        }
+    // 2. Scan capitalized proper entities / titles: e.g. "Master Vane", "The Sun Key", "Lady Corva"
+    const properNameRegex = /\b(?:the\s+)?([A-Z][a-z0-9\-]+(?:\s+[A-Z][a-z0-9\-]+)+)\b/g;
+    let match: RegExpExecArray | null;
+    while ((match = properNameRegex.exec(trimmedSent)) !== null) {
+      const properLabel = match[1].trim();
+      const lower = properLabel.toLowerCase();
+
+      const words = properLabel.split(/\s+/);
+      const isAllStopwords = words.every((w) => NON_ENTITY_STOPWORDS.has(w.toLowerCase()));
+      if (isAllStopwords) continue;
+
+      if (!isKnownOrSublabel(lower, knownLabels) && !foundLabels.has(lower)) {
+        foundLabels.add(lower);
+        const { primaryType, candidateTypes, classificationConfidence } = classifyEntityTypes(properLabel, [trimmedSent]);
+        candidates.push({
+          workingLabel: properLabel,
+          headNoun: words[words.length - 1].toLowerCase(),
+          determiner: 'proper',
+          isProper: true,
+          isExplicitNewInstance: false,
+          primaryType,
+          candidateTypes,
+          classificationConfidence,
+          snippet: trimmedSent,
+        });
       }
     }
   }
@@ -218,7 +289,7 @@ function isKnownOrSublabel(label: string, knownLabels: Set<string>): boolean {
 
   for (const kl of Array.from(knownLabels)) {
     const kll = kl.toLowerCase().trim();
-    if (kll === l || kll.includes(l) || l.includes(kll)) {
+    if (kll === l) {
       return true;
     }
   }
@@ -392,7 +463,7 @@ export function detectIdentityEvidence(
 /**
  * Strict Possession & Relational Grammar Detection
  * Distinguishes: mentions, sees, notices, approaches, touches, uses, carries, holds, owns, possesses, stands_beside, is_located_near, rests_on
- * Accurately determines the grammatical subject of the action when multiple actors or POV actors are involved.
+ * Accurately determines the grammatical subject of the action with backward pronoun coreference resolution across the beat.
  */
 export function detectEntityInteractions(
   prose: string,
@@ -406,6 +477,9 @@ export function detectEntityInteractions(
   targetId?: string;
   actingSubjectId?: string;
   actingSubjectLabel?: string;
+  isFirstPerson: boolean;
+  isThirdPersonPronoun: boolean;
+  thirdPersonPronoun?: string;
   quoteSnippet: string;
 } {
   const lowerProse = prose.toLowerCase();
@@ -413,7 +487,8 @@ export function detectEntityInteractions(
 
   // Find sentence or clause containing entity
   const sentences = prose.split(/(?<=[.!?])\s+/);
-  const matchedSentence = sentences.find((s) => s.toLowerCase().includes(lowerEnt)) || prose;
+  const sentenceIdx = sentences.findIndex((s) => s.toLowerCase().includes(lowerEnt));
+  const matchedSentence = sentenceIdx !== -1 ? sentences[sentenceIdx] : prose;
   const lowerSentence = matchedSentence.toLowerCase();
 
   // Explicit Possession acquisition
@@ -442,9 +517,85 @@ export function detectEntityInteractions(
   const isTouch =
     /\b(touched|brushed|grazed|fingertips against|felt the surface of|reached toward)\b/i.test(lowerSentence);
 
+  // Action verb patterns
+  const actionPatterns = [
+    /\b(picked up|took up|slipped|drew|grasped|seized|lifted|pocketed|clasped)\b/i,
+    /\b(carried|carrying|holding|wielding)\b/i,
+    /\b(put down|set down|placed|laid|dropped|let go|rested|abandoned|left)\b/i,
+    /\b(saw|seen|spotted|noticed|observed|glanced|looked|beheld|examined|gazed)\b/i,
+    /\b(approached|walked|stepped|knelt|bent)\b/i,
+    /\b(touched|brushed|grazed|felt|reached)\b/i,
+  ];
+
+  let actionIdx = -1;
+  for (const pat of actionPatterns) {
+    const m = lowerSentence.match(pat);
+    if (m && m.index !== undefined) {
+      actionIdx = m.index;
+      break;
+    }
+  }
+
+  // Preceding text before action verb in the sentence
+  const clauseBeforeVerb = actionIdx !== -1 ? lowerSentence.slice(0, actionIdx) : lowerSentence;
+
+  // 1. Check for first-person action ("I picked up", "my fingers grasped", "we took")
+  const isFirstPerson = /\b(i|my|we|our)\b/i.test(clauseBeforeVerb);
+
+  // 2. Check for third-person pronouns before the verb
+  const isShe = /\b(she|her)\b/i.test(clauseBeforeVerb);
+  const isHe = /\b(he|him|his)\b/i.test(clauseBeforeVerb);
+  const isThey = /\b(they|them|their)\b/i.test(clauseBeforeVerb);
+  const isThirdPersonPronoun = isShe || isHe || isThey;
+  const thirdPersonPronoun = isShe ? 'she' : isHe ? 'he' : isThey ? 'they' : undefined;
+
+  // Helper to find matching actor from gender / name / keywords
+  const findActorByGender = (gender: 'female' | 'male' | 'any'): typeof knownActors[0] | undefined => {
+    const femaleKeywords = ['mara', 'woman', 'lady', 'girl', 'priestess', 'queen', 'sister', 'she', 'her', 'sorceress', 'actress', 'heroine'];
+    const maleKeywords = ['tran', 'locke', 'man', 'lord', 'boy', 'priest', 'king', 'brother', 'he', 'him', 'his', 'actor', 'hero', 'monk'];
+
+    const targetKeywords = gender === 'female' ? femaleKeywords : gender === 'male' ? maleKeywords : [];
+
+    // Search in previous sentences of the current beat (backward from current sentence)
+    if (sentenceIdx !== -1) {
+      for (let i = sentenceIdx; i >= 0; i--) {
+        const prevSent = sentences[i].toLowerCase();
+        for (const a of knownActors) {
+          const names = [a.name, a.working_label, ...(a.aliases || [])].filter(Boolean) as string[];
+          const matchesActor = names.some((n) => prevSent.includes(n.toLowerCase()));
+          if (matchesActor) {
+            if (gender === 'any') return a;
+            const matchesGender = names.some((n) => targetKeywords.some((k) => n.toLowerCase().includes(k))) ||
+                                  targetKeywords.some((k) => prevSent.includes(k));
+            if (matchesGender) return a;
+          }
+        }
+      }
+    }
+
+    // Fallback search across all knownActors
+    return knownActors.find((a) => {
+      const names = [a.name, a.working_label, ...(a.aliases || [])].filter(Boolean) as string[];
+      if (gender === 'any') return true;
+      return names.some((n) => targetKeywords.some((k) => n.toLowerCase().includes(k)));
+    });
+  };
+
   // Helper to extract the acting actor subject from the sentence/prose
   const resolveActingSubject = (): { id?: string; label?: string } => {
-    // 1. Identify actor names / labels in the sentence and their positions relative to the action verb
+    // 1. Direct First-Person action
+    if (isFirstPerson) {
+      if (actorLabel) {
+        const match = knownActors.find((a) => {
+          const names = [a.name, a.working_label, ...(a.aliases || [])].filter(Boolean) as string[];
+          return names.some((n) => n.toLowerCase() === actorLabel.toLowerCase());
+        });
+        if (match) return { id: match.id, label: match.name || match.working_label };
+      }
+      return { label: actorLabel };
+    }
+
+    // 2. Identify explicit actor names in the clause before the action verb
     if (knownActors.length > 0) {
       type ActorMatch = { actor: typeof knownActors[0]; index: number; label: string; length: number };
       const actorMatches: ActorMatch[] = [];
@@ -452,7 +603,6 @@ export function detectEntityInteractions(
       for (const a of knownActors) {
         const names = [a.name, a.working_label, ...(a.aliases || [])].filter(Boolean) as string[];
         for (const n of names) {
-          // Look for whole word or exact name matches in the sentence
           const regex = new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
           const m = lowerSentence.match(regex);
           if (m && m.index !== undefined) {
@@ -462,45 +612,49 @@ export function detectEntityInteractions(
       }
 
       if (actorMatches.length > 0) {
-        // Find position of the action verb in the sentence
-        const actionPatterns = [
-          /\b(picked up|took up|slipped|drew|grasped|seized|lifted|pocketed|clasped)\b/i,
-          /\b(carried|carrying|holding|wielding)\b/i,
-          /\b(put down|set down|placed|laid|dropped|let go|rested|abandoned|left)\b/i,
-          /\b(saw|seen|spotted|noticed|observed|glanced|looked|beheld|examined|gazed)\b/i,
-          /\b(approached|walked|stepped|knelt|bent)\b/i,
-          /\b(touched|brushed|grazed|felt|reached)\b/i,
-        ];
-
-        let actionIdx = -1;
-        for (const pat of actionPatterns) {
-          const m = lowerSentence.match(pat);
-          if (m && m.index !== undefined) {
-            actionIdx = m.index;
-            break;
-          }
-        }
-
         if (actionIdx !== -1) {
-          // Preceding subjects (actors occurring before the action verb in the same sentence or clause)
           const subjectsBefore = actorMatches.filter((m) => m.index < actionIdx);
           if (subjectsBefore.length > 0) {
-            // Closest subject before the verb (e.g. in "Tran watched as Mara picked up...", Mara is closer before "picked up")
             subjectsBefore.sort((a, b) => b.index - a.index);
             const best = subjectsBefore[0];
             return { id: best.actor.id, label: best.actor.name || best.actor.working_label };
           }
         }
 
-        // Fallback within sentence: the actor mentioned in the sentence
         actorMatches.sort((a, b) => a.index - b.index);
         const first = actorMatches[0];
         return { id: first.actor.id, label: first.actor.name || first.actor.working_label };
       }
     }
 
-    // 2. Fallback to explicit actorLabel if provided
-    if (actorLabel) {
+    // 3. Pronoun Coreference Resolution (Backward search for antecedent)
+    if (isShe) {
+      const femaleActor = findActorByGender('female');
+      if (femaleActor) {
+        return { id: femaleActor.id, label: femaleActor.name || femaleActor.working_label };
+      }
+      // Unresolved 3rd-person female: do not assign to unknown/male POV actor
+      return { label: 'she' };
+    }
+
+    if (isHe) {
+      const maleActor = findActorByGender('male');
+      if (maleActor) {
+        return { id: maleActor.id, label: maleActor.name || maleActor.working_label };
+      }
+      return { label: 'he' };
+    }
+
+    if (isThey) {
+      const anyActor = findActorByGender('any');
+      if (anyActor) {
+        return { id: anyActor.id, label: anyActor.name || anyActor.working_label };
+      }
+      return { label: 'they' };
+    }
+
+    // 4. Fallback to explicit actorLabel only if not in conflict with 3rd-person pronouns
+    if (actorLabel && !isThirdPersonPronoun) {
       const match = knownActors.find((a) => {
         const names = [a.name, a.working_label, ...(a.aliases || [])].filter(Boolean) as string[];
         return names.some((n) => n.toLowerCase() === actorLabel.toLowerCase());
@@ -521,6 +675,9 @@ export function detectEntityInteractions(
       targetId: actingSubject.id,
       actingSubjectId: actingSubject.id,
       actingSubjectLabel: actingSubject.label,
+      isFirstPerson,
+      isThirdPersonPronoun,
+      thirdPersonPronoun,
       quoteSnippet: matchedSentence.trim(),
     };
   }
@@ -533,6 +690,9 @@ export function detectEntityInteractions(
       targetId: actingSubject.id,
       actingSubjectId: actingSubject.id,
       actingSubjectLabel: actingSubject.label,
+      isFirstPerson,
+      isThirdPersonPronoun,
+      thirdPersonPronoun,
       quoteSnippet: matchedSentence.trim(),
     };
   }
@@ -542,6 +702,8 @@ export function detectEntityInteractions(
       relationshipType: 'rests_on',
       isPossession: false,
       isRelease: false,
+      isFirstPerson: false,
+      isThirdPersonPronoun: false,
       quoteSnippet: matchedSentence.trim(),
     };
   }
@@ -554,6 +716,9 @@ export function detectEntityInteractions(
       targetId: actingSubject.id,
       actingSubjectId: actingSubject.id,
       actingSubjectLabel: actingSubject.label,
+      isFirstPerson,
+      isThirdPersonPronoun,
+      thirdPersonPronoun,
       quoteSnippet: matchedSentence.trim(),
     };
   }
@@ -566,6 +731,9 @@ export function detectEntityInteractions(
       targetId: actingSubject.id,
       actingSubjectId: actingSubject.id,
       actingSubjectLabel: actingSubject.label,
+      isFirstPerson,
+      isThirdPersonPronoun,
+      thirdPersonPronoun,
       quoteSnippet: matchedSentence.trim(),
     };
   }
@@ -578,6 +746,9 @@ export function detectEntityInteractions(
       targetId: actingSubject.id,
       actingSubjectId: actingSubject.id,
       actingSubjectLabel: actingSubject.label,
+      isFirstPerson,
+      isThirdPersonPronoun,
+      thirdPersonPronoun,
       quoteSnippet: matchedSentence.trim(),
     };
   }
@@ -586,6 +757,9 @@ export function detectEntityInteractions(
     relationshipType: 'mentions',
     isPossession: false,
     isRelease: false,
+    isFirstPerson,
+    isThirdPersonPronoun,
+    thirdPersonPronoun,
     quoteSnippet: matchedSentence.trim(),
   };
 }
@@ -673,6 +847,7 @@ export function extractClaimsFromProse(
           evidence_beats: [beatNumber],
           evidence_quotes: [s.trim()],
           evidence_count: 1,
+          confidence: 0.90,
           first_seen_beat: beatNumber,
           last_seen_beat: beatNumber,
         });
@@ -691,6 +866,7 @@ export function extractClaimsFromProse(
           evidence_beats: [beatNumber],
           evidence_quotes: [s.trim()],
           evidence_count: 1,
+          confidence: 0.85,
           first_seen_beat: beatNumber,
           last_seen_beat: beatNumber,
         });
@@ -703,6 +879,7 @@ export function extractClaimsFromProse(
         evidence_beats: [beatNumber],
         evidence_quotes: [s.trim()],
         evidence_count: 1,
+        confidence: 0.80,
         first_seen_beat: beatNumber,
         last_seen_beat: beatNumber,
       });
@@ -719,6 +896,7 @@ export function extractClaimsFromProse(
           evidence_beats: [beatNumber],
           evidence_quotes: [s.trim()],
           evidence_count: 1,
+          confidence: 0.85,
           first_seen_beat: beatNumber,
           last_seen_beat: beatNumber,
         });
@@ -735,6 +913,7 @@ export function extractClaimsFromProse(
           evidence_beats: [beatNumber],
           evidence_quotes: [s.trim()],
           evidence_count: 1,
+          confidence: 0.85,
           first_seen_beat: beatNumber,
           last_seen_beat: beatNumber,
         });
@@ -752,6 +931,7 @@ export function extractClaimsFromProse(
           evidence_beats: [beatNumber],
           evidence_quotes: [s.trim()],
           evidence_count: 1,
+          confidence: 0.90,
           first_seen_beat: beatNumber,
           last_seen_beat: beatNumber,
         });
@@ -769,6 +949,7 @@ export function extractClaimsFromProse(
           evidence_beats: [beatNumber],
           evidence_quotes: [s.trim()],
           evidence_count: 1,
+          confidence: 0.85,
           first_seen_beat: beatNumber,
           last_seen_beat: beatNumber,
         });
@@ -784,6 +965,7 @@ export function extractClaimsFromProse(
     evidence_beats: [beatNumber],
     evidence_quotes: sentences.length > 0 ? [sentences[0].trim()] : [prose.slice(0, 80)],
     evidence_count: 1,
+    confidence: 0.70,
     first_seen_beat: beatNumber,
     last_seen_beat: beatNumber,
   });
@@ -901,6 +1083,9 @@ export function mergeClaims(
           existing.evidence_quotes.push(q);
         }
       }
+      if (nc.confidence !== undefined) {
+        existing.confidence = Math.max(existing.confidence || 0, nc.confidence);
+      }
       if (nc.last_seen_beat !== undefined) {
         existing.last_seen_beat = Math.max(existing.last_seen_beat || 0, nc.last_seen_beat);
       }
@@ -956,11 +1141,13 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
 
   // 1. Ingest baseline actors
   for (const a of project.actors) {
-    const ent = getOrCreate(a.id, a.identity.working_label || a.identity.name || a.id, 'actor', 1);
-    ent.canonical_label = a.identity.name;
-    ent.aliases = a.identity.aliases || [];
+    const rawActor = a as any;
+    const actorLabel = a.identity?.working_label || a.identity?.name || rawActor.name || rawActor.working_label || a.id;
+    const ent = getOrCreate(a.id, actorLabel, 'actor', 1);
+    ent.canonical_label = a.identity?.name || rawActor.name || null;
+    ent.aliases = a.identity?.aliases || rawActor.aliases || [];
     ent.current_location_id = a.current_location_id;
-    ent.salience = a.roles.story.includes('protagonist') ? 0.95 : 0.65;
+    ent.salience = a.roles?.story?.includes('protagonist') ? 0.95 : 0.65;
     ent.classification_confidence = 'resolved';
     ent.candidate_types = ['actor'];
     if (a.is_author_locked) {
@@ -1028,6 +1215,12 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
   const distinctBeatsByEntity = new Map<string, Set<number>>();
   const quotesByEntity = new Map<string, string[]>();
 
+  // Instance disambiguation trackers across chronological manuscript replay
+  const activeEntitiesByLocation = new Map<string, Map<string, string>>(); // locId -> (baseLabel -> entityId)
+  const lastActiveEntityByLabel = new Map<string, { entityId: string; locationId: string; beatNumber: number }>();
+  const instanceCounterByBaseLabel = new Map<string, number>();
+  const allInstancesByBaseLabel = new Map<string, string[]>(); // baseLabel -> [id1, id2, ...]
+
   const knownActorsList = project.actors.map((a) => ({
     id: a.id,
     name: a.identity.name,
@@ -1039,6 +1232,9 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
     const bNum = beat.beatNumber;
     const prose = beat.text;
     const lowerProse = prose.toLowerCase();
+    const locId = beat.locationId || 'loc_scene';
+    const locObj = project.locations.find((l) => l.id === locId);
+    const locName = locObj?.identity.name || locObj?.identity.working_label || (beat.locationId ? beat.locationId.replace(/^loc_/, '') : 'Scene');
 
     const povActor = project.actors.find((a) => a.id === beat.povActorId);
     const povActorLabel = povActor ? (povActor.identity.name || povActor.identity.working_label) : undefined;
@@ -1055,38 +1251,116 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
 
     const discovered = extractNovelEntityCandidates(prose, currentKnownLabels);
     for (const cand of discovered) {
-      const sanitizedId = `ent_${cand.workingLabel.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
-      if (!codexMap.has(sanitizedId)) {
-        const ent = getOrCreate(sanitizedId, cand.workingLabel, cand.primaryType, bNum);
-        ent.candidate_types = cand.candidateTypes;
-        ent.classification_confidence = cand.classificationConfidence;
-        ent.first_seen = `Beat ${bNum} (T${bNum})`;
-        ent.last_seen = `Beat ${bNum} (T${bNum})`;
+      const baseLabel = cand.workingLabel.toLowerCase().trim();
+
+      if (cand.isProper) {
+        // Proper entities are globally unique
+        const sanitizedId = `ent_${cand.workingLabel.replace(/[^a-zA-Z0-9\-]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase()}`;
+        if (!codexMap.has(sanitizedId)) {
+          const ent = getOrCreate(sanitizedId, cand.workingLabel, cand.primaryType, bNum);
+          ent.candidate_types = cand.candidateTypes;
+          ent.classification_confidence = cand.classificationConfidence;
+          ent.first_seen = `Beat ${bNum} (T${bNum})`;
+          ent.last_seen = `Beat ${bNum} (T${bNum})`;
+          ent.scope_location_id = locId;
+          ent.scope_beat_introduced = bNum;
+          ent.current_location_id = locId;
+        }
+      } else {
+        // Common descriptive noun phrase (e.g. "guard", "silver moth", "hooded woman")
+        const isPreRegistered =
+          (project.actors || []).some((a) => a.identity.working_label?.toLowerCase() === baseLabel || a.identity.name?.toLowerCase() === baseLabel) ||
+          (project.objects || []).some((o) => o.identity.working_label?.toLowerCase() === baseLabel || o.identity.name?.toLowerCase() === baseLabel) ||
+          (project.locations || []).some((l) => l.identity.working_label?.toLowerCase() === baseLabel || l.identity.name?.toLowerCase() === baseLabel);
+
+        if (!isPreRegistered) {
+          const activeLocMap = activeEntitiesByLocation.get(locId);
+          const activeIdAtLoc = activeLocMap?.get(baseLabel);
+          const lastActive = lastActiveEntityByLabel.get(baseLabel);
+
+          const isDefinite = cand.determiner === 'the' || cand.determiner === 'this' || cand.determiner === 'that';
+          const isContinuityPossible = !cand.isExplicitNewInstance && lastActive && (locId === lastActive.locationId || !beat.locationId) && (bNum - lastActive.beatNumber <= 2);
+
+          let targetId: string;
+
+          if (isContinuityPossible && (isDefinite || (activeIdAtLoc && !cand.isExplicitNewInstance))) {
+            // Continuity: resolves to the active instance in this scene
+            targetId = activeIdAtLoc || lastActive!.entityId;
+            lastActiveEntityByLabel.set(baseLabel, { entityId: targetId, locationId: locId, beatNumber: bNum });
+            if (!activeEntitiesByLocation.has(locId)) activeEntitiesByLocation.set(locId, new Map());
+            activeEntitiesByLocation.get(locId)!.set(baseLabel, targetId);
+          } else {
+            // New instance disambiguation: either first mention, explicit new instance ("another guard"), or in a distinct scene
+            const currentCount = (instanceCounterByBaseLabel.get(baseLabel) || 0) + 1;
+            instanceCounterByBaseLabel.set(baseLabel, currentCount);
+
+            const sanitizedBase = cand.workingLabel.toLowerCase().replace(/[^a-zA-Z0-9\-]+/g, '_').replace(/^_+|_+$/g, '');
+            targetId = currentCount === 1 ? `ent_${sanitizedBase}` : `ent_${sanitizedBase}_${currentCount}`;
+
+            if (!codexMap.has(targetId)) {
+              const ent = getOrCreate(targetId, cand.workingLabel, cand.primaryType, bNum);
+              ent.candidate_types = cand.candidateTypes;
+              ent.classification_confidence = cand.classificationConfidence;
+              ent.first_seen = `Beat ${bNum} (T${bNum})`;
+              ent.last_seen = `Beat ${bNum} (T${bNum})`;
+              ent.instance_index = currentCount;
+              ent.scope_location_id = locId;
+              ent.scope_beat_introduced = bNum;
+              ent.is_generic_class = true;
+              ent.current_location_id = locId;
+              ent.disambiguation_hint = currentCount > 1 || (project.locations && project.locations.length > 1) || project.manuscript.length > 1
+                ? `${cand.workingLabel} at ${locName} (Beat ${bNum})`
+                : null;
+            }
+
+            if (!activeEntitiesByLocation.has(locId)) activeEntitiesByLocation.set(locId, new Map());
+            activeEntitiesByLocation.get(locId)!.set(baseLabel, targetId);
+            lastActiveEntityByLabel.set(baseLabel, { entityId: targetId, locationId: locId, beatNumber: bNum });
+            const list = allInstancesByBaseLabel.get(baseLabel) || [];
+            list.push(targetId);
+            allInstancesByBaseLabel.set(baseLabel, list);
+          }
+        }
       }
     }
 
     for (const [entId, ent] of Array.from(codexMap.entries())) {
-      const labelsToCheck = [
-        ent.working_label,
-        ent.canonical_label,
-        ...(ent.aliases || []),
-      ].filter(Boolean) as string[];
-
-      if (ent.working_label) {
-        const trimmed = ent.working_label.replace(/^(small|large|tiny|huge|abandoned|ancient|old|new|strange|mysterious|quiet)\s+/i, '');
-        if (trimmed && trimmed !== ent.working_label && !labelsToCheck.includes(trimmed)) {
-          labelsToCheck.push(trimmed);
-        }
-      }
+      const baseKey = ent.working_label.toLowerCase().trim();
+      const instances = allInstancesByBaseLabel.get(baseKey);
 
       let mentionedInBeat = false;
       let matchedSnippet = '';
 
-      for (const lbl of labelsToCheck) {
-        if (lowerProse.includes(lbl.toLowerCase())) {
+      if (ent.is_generic_class && instances && instances.length > 1) {
+        // Multi-instance disambiguated mention check
+        const activeForLoc = activeEntitiesByLocation.get(locId)?.get(baseKey);
+        const isIntroducedThisBeat = ent.scope_beat_introduced === bNum && ent.id === activeForLoc;
+        const isContinuedThisBeat = ent.id === activeForLoc && (lowerProse.includes(ent.working_label.toLowerCase()) || (ent.canonical_label ? lowerProse.includes(ent.canonical_label.toLowerCase()) : false));
+
+        if (isIntroducedThisBeat || isContinuedThisBeat) {
           mentionedInBeat = true;
           ent.mention_count += 1;
-          break;
+        }
+      } else {
+        const labelsToCheck = [
+          ent.working_label,
+          ent.canonical_label,
+          ...(ent.aliases || []),
+        ].filter(Boolean) as string[];
+
+        if (ent.working_label) {
+          const trimmed = ent.working_label.replace(/^(small|large|tiny|huge|abandoned|ancient|old|new|strange|mysterious|quiet)\s+/i, '');
+          if (trimmed && trimmed !== ent.working_label && !labelsToCheck.includes(trimmed)) {
+            labelsToCheck.push(trimmed);
+          }
+        }
+
+        for (const lbl of labelsToCheck) {
+          if (lowerProse.includes(lbl.toLowerCase())) {
+            mentionedInBeat = true;
+            ent.mention_count += 1;
+            break;
+          }
         }
       }
 
@@ -1109,10 +1383,16 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
         matchedSnippet = interaction.quoteSnippet;
         quotesByEntity.get(entId)!.push(matchedSnippet);
 
-        const resolvedHolderId = interaction.actingSubjectId || beat.povActorId;
-
         if (interaction.isPossession) {
-          ent.current_holder_id = resolvedHolderId;
+          if (interaction.actingSubjectId) {
+            ent.current_holder_id = interaction.actingSubjectId;
+          } else if (interaction.isFirstPerson) {
+            ent.current_holder_id = beat.povActorId;
+          } else {
+            // Unresolved third-person subject (e.g., "She picked up the brass device" with no female actor):
+            // Crucial fix: DO NOT falsely assign the object to the POV actor!
+            // The item is held by an unresolved entity or remains unassigned to the POV actor.
+          }
         } else if (interaction.isRelease) {
           ent.current_holder_id = null;
         }
@@ -1133,7 +1413,7 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
         };
         ent.evidence.push(prov);
 
-        const relSourceId = interaction.actingSubjectId || beat.povActorId;
+        const relSourceId = interaction.actingSubjectId || (interaction.isFirstPerson ? beat.povActorId : beat.povActorId);
         const rel: EntityRelationship = {
           id: `rel_${entId}_${relSourceId}_b${bNum}`,
           type: interaction.relationshipType,
@@ -1145,7 +1425,7 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
         };
         ent.relationships.push(rel);
 
-        const extractedClaims = extractClaimsFromProse(prose, ent.working_label, bNum, labelsToCheck);
+        const extractedClaims = extractClaimsFromProse(prose, ent.working_label, bNum, [ent.working_label, ent.canonical_label, ...(ent.aliases || [])].filter(Boolean) as string[]);
         ent.claims = mergeClaims(ent.claims, extractedClaims);
 
         ent.last_seen = `Beat ${bNum} (T${bNum})`;
@@ -1164,19 +1444,23 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
 
     const idResolutions = detectIdentityEvidence(prose, allKnownLabelsForId, bNum);
     for (const res of idResolutions) {
-      // Find source entity (the provisional entity, e.g. "hooded woman")
-      const sourceEnt = Array.from(codexMap.values()).find((e) => {
-        const wl = e.working_label.toLowerCase();
-        const cl = e.canonical_label?.toLowerCase() || '';
-        const sl = res.sourceLabel.toLowerCase();
-        return wl === sl || cl === sl || wl.includes(sl) || sl.includes(wl);
-      });
+      const sl = res.sourceLabel.toLowerCase();
+      // Find active source entity in this beat / location
+      const activeIdAtLoc = activeEntitiesByLocation.get(locId)?.get(sl);
+      let sourceEnt = activeIdAtLoc ? codexMap.get(activeIdAtLoc) : undefined;
+      if (!sourceEnt) {
+        sourceEnt = Array.from(codexMap.values()).find((e) => {
+          const wl = e.working_label.toLowerCase();
+          const cl = e.canonical_label?.toLowerCase() || '';
+          return wl === sl || cl === sl || wl.includes(sl) || sl.includes(wl);
+        });
+      }
 
       if (!sourceEnt) continue;
 
       // Check if target named entity (e.g. "Mara") already exists in codexMap
       const targetEnt = Array.from(codexMap.values()).find((e) => {
-        if (e.id === sourceEnt.id) return false;
+        if (e.id === sourceEnt!.id) return false;
         const wl = e.working_label.toLowerCase();
         const cl = e.canonical_label?.toLowerCase() || '';
         const rl = res.revealedCanonicalName.toLowerCase();
@@ -1234,6 +1518,7 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
           evidence_beats: [bNum],
           evidence_quotes: [res.evidenceSnippet],
           evidence_count: 1,
+          confidence: res.confidence,
           first_seen_beat: bNum,
           last_seen_beat: bNum,
         });
@@ -1242,10 +1527,14 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
         targetEnt.last_seen = `Beat ${bNum} (T${bNum})`;
         targetEnt.mention_count += sourceEnt.mention_count;
 
-        // Remove source provisional entity from codexMap
+        // Clean up source entity trackers
         codexMap.delete(sourceEnt.id);
         distinctBeatsByEntity.delete(sourceEnt.id);
         quotesByEntity.delete(sourceEnt.id);
+        activeEntitiesByLocation.get(locId)?.delete(sl);
+        if (lastActiveEntityByLabel.get(sl)?.entityId === sourceEnt.id) {
+          lastActiveEntityByLabel.delete(sl);
+        }
       } else {
         // Resolve sourceEnt's canonical identity in-place
         const oldLabel = sourceEnt.working_label;
@@ -1266,6 +1555,7 @@ export function synthesizeCodex(project: StoryProject): CodexEntity[] {
           evidence_beats: [bNum],
           evidence_quotes: [res.evidenceSnippet],
           evidence_count: 1,
+          confidence: res.confidence,
           first_seen_beat: bNum,
           last_seen_beat: bNum,
         });

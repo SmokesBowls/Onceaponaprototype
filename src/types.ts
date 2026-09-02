@@ -42,6 +42,7 @@ export interface EntityClaim {
   evidence_beats: number[];
   evidence_quotes: string[];
   evidence_count: number;
+  confidence?: number;
   contradiction_notes?: string;
   first_seen_beat?: number;
   last_seen_beat?: number;
@@ -77,6 +78,11 @@ export interface CodexEntity {
   id: string;
   working_label: string;
   canonical_label?: string | null;
+  disambiguation_hint?: string | null; // e.g. "Gate guard at Crossroads (Beat 1)" vs "Carriage guard at River (Beat 15)"
+  instance_index?: number; // 1, 2, 3...
+  scope_location_id?: string | null;
+  scope_beat_introduced?: number;
+  is_generic_class?: boolean;
   entity_type: string; // 'actor' | 'creature' | 'object' | 'landmark' | 'structure' | 'location' | 'faction' | 'concept' | 'event' | 'phenomenon' | 'provisional'
   classification_confidence: 'provisional' | 'resolved';
   candidate_types?: string[]; // e.g. ['landmark', 'location', 'structure', 'object']
